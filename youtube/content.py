@@ -78,7 +78,6 @@ Retourne UNIQUEMENT un objet JSON valide. Pas de markdown, pas de backticks, pas
     ...
   ],
   "hook_text": "Texte court affiche 5 premieres secondes (5-10 mots max)",
-  "image_prompts": ["prompt 1 en anglais", "prompt 2", "... (20-40 prompts)"],
   "yt_title": "Titre YouTube accrocheur (max 70 caracteres, avec majuscules strategiques)",
   "yt_description": "Description YouTube complete avec timestamps et liens (400-600 mots)",
   "yt_tags": ["tag1", "tag2", "... (20-30 tags pour SEO YouTube)"],
@@ -215,49 +214,143 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
     return data["choices"][0]["message"]["content"]
 
 
-def generate_content(exclusion_text: str = "") -> dict:
-    """Appelle Kie.ai LLM pour generer le contenu YouTube long format."""
+def _generate_script(exclusion_text: str) -> dict:
+    """Etape 1: Genere le script et metadata (sans image_prompts)."""
     user_prompt = f"""Cree le contenu YouTube motivationnel/philosophique du jour (FORMAT LONG 10-20 MINUTES).
 
 {exclusion_text}
 
 INSTRUCTIONS :
 1. script_complet entre 1500 et 3000 mots (10-20 minutes de narration)
-2. 20-40 image_prompts cinematiques en anglais, FORMAT 16:9
-3. Structure en 12 parties avec chapitres
-4. yt_title accrocheur (max 70 chars)
-5. yt_description complete avec timestamps des chapitres
-6. yt_tags (20-30 tags SEO YouTube)
-7. thumbnail_text (3-5 mots CHOC en majuscules)
-8. chapitres avec titres et positions approximatives
-9. JAMAIS la meme citation que celles listees ci-dessus
-10. TOUS les accents francais OBLIGATOIRES
-11. TOUS les nombres en LETTRES
-12. Mots anglais en phonetique francaise dans script_complet
-13. mood = l'ambiance globale de la video
+2. Structure en 12 parties avec chapitres
+3. yt_title accrocheur (max 70 chars)
+4. yt_description complete avec timestamps des chapitres
+5. yt_tags (20-30 tags SEO YouTube)
+6. thumbnail_text (3-5 mots CHOC en majuscules)
+7. chapitres avec titres et positions approximatives
+8. JAMAIS la meme citation que celles listees ci-dessus
+9. TOUS les accents francais OBLIGATOIRES
+10. TOUS les nombres en LETTRES
+11. Mots anglais en phonetique francaise dans script_complet
+12. mood = l'ambiance globale de la video
 
-Retourne UNIQUEMENT le JSON, sans backticks, sans texte avant ou apres."""
+NE PAS inclure image_prompts dans cette reponse. Retourne UNIQUEMENT le JSON, sans backticks."""
 
+    raw_text = _call_kie_llm(SYSTEM_PROMPT, user_prompt)
+    return _parse_json(raw_text)
+
+
+def _generate_image_prompts(script: str, mood: str, auteur: str) -> list[str]:
+    """Etape 2: Genere les image prompts basés sur le script."""
+    system = """Tu generes des prompts d'images cinematiques en anglais pour illustrer un script YouTube.
+Format 16:9 OBLIGATOIRE. Chaque prompt doit evoquer un visuel cinematique.
+Style : "dark moody cinematic lighting, dramatic shadows, teal and orange color grading, 4k ultrarealistic photography, widescreen 16:9, no text no words no writing"
+Les images sont affichees DANS L'ORDRE pendant la narration."""
+
+    user_prompt = f"""Genere 25-35 prompts d'images cinematiques en anglais pour ce script YouTube.
+
+AUTEUR: {auteur}
+MOOD: {mood}
+SCRIPT (extrait des 500 premiers mots):
+{' '.join(script.split()[:500])}
+
+Retourne UNIQUEMENT un JSON array de strings, sans backticks. Exemple:
+["prompt 1", "prompt 2", ...]"""
+
+    raw_text = _call_kie_llm(system, user_prompt)
+    cleaned = re.sub(r"```(?:json)?\s*", "", raw_text)
+    cleaned = re.sub(r"```\s*$", "", cleaned).strip()
+
+    try:
+        prompts = json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Tenter de reparer un array tronque
+        if cleaned.count('"') % 2 == 1:
+            cleaned += '"'
+        open_brackets = cleaned.count('[') - cleaned.count(']')
+        cleaned += ']' * max(0, open_brackets)
+        prompts = json.loads(cleaned)
+
+    if isinstance(prompts, list):
+        return [p for p in prompts if isinstance(p, str) and len(p) > 10]
+    return []
+
+
+def generate_content(exclusion_text: str = "") -> dict:
+    """Appelle Kie.ai LLM en 2 etapes pour generer le contenu YouTube."""
     max_retries = 2
     last_error = None
+
+    # Etape 1: Script + metadata
     for attempt in range(max_retries + 1):
         try:
-            raw_text = _call_kie_llm(SYSTEM_PROMPT, user_prompt)
-            content = _parse_json(raw_text)
-            content = _validate(content)
-            logger.info(
-                f"YouTube content generated: {content['auteur']} | "
-                f"{len(content['script_complet'].split())} words | "
-                f"{len(content['image_prompts'])} images | "
-                f"Title: {content.get('yt_title', 'N/A')}"
-            )
-            return content
+            content = _generate_script(exclusion_text)
+            # Validation basique du script
+            required = ["hook", "citation", "auteur", "script_complet"]
+            for field in required:
+                if field not in content:
+                    raise ValueError(f"Champ manquant: {field}")
+            word_count = len(content["script_complet"].split())
+            if word_count < config.SCRIPT_MIN_WORDS:
+                raise ValueError(f"Script trop court: {word_count} mots")
+            logger.info(f"Script genere: {content['auteur']} | {word_count} mots")
+            break
         except (json.JSONDecodeError, ValueError) as e:
             last_error = e
-            logger.warning(f"Content generation attempt {attempt + 1} failed: {e}")
-            if attempt < max_retries:
-                logger.info("Retrying content generation...")
-    raise last_error
+            logger.warning(f"Script generation attempt {attempt + 1} failed: {e}")
+            if attempt >= max_retries:
+                raise last_error
+
+    # Etape 2: Image prompts (appel separe)
+    try:
+        image_prompts = _generate_image_prompts(
+            content["script_complet"],
+            content.get("mood", "dark_motivation"),
+            content["auteur"],
+        )
+        content["image_prompts"] = image_prompts
+        logger.info(f"Image prompts generes: {len(image_prompts)}")
+    except Exception as e:
+        logger.warning(f"Image prompts generation failed: {e}, using fallback")
+        content["image_prompts"] = _fallback_image_prompts(content)
+
+    content = _validate(content)
+    logger.info(
+        f"YouTube content complete: {content['auteur']} | "
+        f"{len(content['script_complet'].split())} words | "
+        f"{len(content['image_prompts'])} images | "
+        f"Title: {content.get('yt_title', 'N/A')}"
+    )
+    return content
+
+
+def _fallback_image_prompts(content: dict) -> list[str]:
+    """Genere des prompts generiques si l'appel LLM echoue."""
+    mood = content.get("mood", "dark_motivation")
+    auteur = content.get("auteur", "philosopher")
+    base_prompts = [
+        f"dark moody cinematic portrait of ancient {auteur}, dramatic lighting, 16:9, no text",
+        "vast mountain landscape at dawn, cinematic lighting, teal orange grading, 16:9, no text",
+        "silhouette of person standing on cliff edge, dramatic sunset, widescreen, no text",
+        "ancient library with dust particles in light beams, cinematic, 16:9, no text",
+        "close-up of weathered hands holding old book, moody lighting, 16:9, no text",
+        "stormy ocean waves crashing on rocks, dramatic sky, cinematic, 16:9, no text",
+        "lone tree in vast desert landscape, golden hour, cinematic, 16:9, no text",
+        "dark corridor with light at the end, dramatic shadows, 16:9, no text",
+        "person meditating on mountain top, misty sunrise, cinematic, 16:9, no text",
+        "ancient ruins with dramatic sky, teal and orange grading, 16:9, no text",
+        "close-up of eyes reflecting fire, moody cinematic, 16:9, no text",
+        "city skyline at night with fog, cinematic lighting, 16:9, no text",
+        "person walking alone on empty road, dramatic perspective, 16:9, no text",
+        "sunrise breaking through storm clouds, golden light rays, 16:9, no text",
+        "ancient statue face in dramatic shadow, cinematic, 16:9, no text",
+        "forest path with light filtering through trees, moody atmosphere, 16:9, no text",
+        "person standing before vast ocean, back to camera, cinematic, 16:9, no text",
+        "clock gears in macro, golden tones, cinematic lighting, 16:9, no text",
+        "mountain peak above clouds at sunset, epic cinematic, 16:9, no text",
+        "person reaching toward light, dramatic silhouette, 16:9, no text",
+    ]
+    return base_prompts
 
 
 def _parse_json(text: str) -> dict:
