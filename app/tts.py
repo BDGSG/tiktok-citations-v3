@@ -128,12 +128,22 @@ def _apply_corrections(text: str) -> str:
     return text
 
 
+def _escape_xml(text: str) -> str:
+    """Echappe les caracteres speciaux XML/SSML."""
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    text = text.replace('"', "&quot;")
+    return text
+
+
 def _build_ssml(corrected_words: list[str]) -> str:
     """Construit le SSML avec marks et pauses intelligentes."""
     parts = ["<speak>"]
     for i, word in enumerate(corrected_words):
         is_last = i == len(corrected_words) - 1
-        parts.append(f'<mark name="w{i}"/>{word} ')
+        safe_word = _escape_xml(word)
+        parts.append(f'<mark name="w{i}"/>{safe_word} ')
 
         # Systeme de pauses intelligent
         if re.search(r"[?]$", word):
