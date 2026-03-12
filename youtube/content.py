@@ -238,9 +238,11 @@ REGLES POUR LE THUMBNAIL (thumbnail_text) :
 
 REGLES POUR LA DESCRIPTION (yt_description) :
 - 200+ mots minimum
-- Les 2 premieres lignes = resume percutant avec mots-cles naturels
-- Inclure : sagesse stoicienne, philosophie, developpement personnel, citations
-- Structure : resume > ce que tu vas apprendre > contexte > hashtags
+- Les 2 premieres lignes = resume percutant avec mots-cles naturels (CRUCIAL pour le SEO, visible avant "Afficher plus")
+- Inclure naturellement ces mots-cles : citations philosophiques, sagesse stoicienne, philosophie, developpement personnel, lecons de vie, citations inspirantes
+- Structure : citation + resume percutant > ce que tu vas decouvrir (liste a puces) > contexte philosophique > CTA subtil > liens reseaux > hashtags SEO
+- Ajouter a la fin : #Citations #Philosophie #Sagesse #Stoicisme #DeveloppementPersonnel #CitationDuJour
+- Mentionner TikTok : @CitationDuJour
 
 Retourne ce JSON :
 {{
@@ -402,20 +404,34 @@ def generate_content(exclusion_text: str = "") -> dict:
 
 def _build_fallback_description(citation: str, auteur: str, epoque: str, script_excerpt: str) -> str:
     """Genere une description YouTube SEO de secours si le LLM n'en a pas fourni."""
+    auteur_tag = auteur.lower().replace(" ", "").replace("'", "")
     return (
         f'"{citation}" — {auteur}\n\n'
         f"Dans cette video, on plonge dans la pensee de {auteur} ({epoque}) "
-        f"pour comprendre pourquoi cette citation est plus pertinente que jamais. "
-        f"On explore son contexte historique, son sens profond, et surtout comment "
-        f"l'appliquer concretement dans ta vie quotidienne.\n\n"
-        f"Cette video aborde des themes comme la philosophie, le developpement personnel, "
-        f"la sagesse antique appliquee aux problemes modernes (anxiete, burnout, "
-        f"relations, reseaux sociaux). Que tu sois passionné de stoicisme, "
-        f"d'existentialisme ou simplement en quete de sens, cette reflexion est pour toi.\n\n"
-        f"Si cette video t'a fait voir les choses autrement, laisse un commentaire "
-        f"avec ta propre interpretation.\n\n"
-        f"#philosophie #citationdujour #{auteur.lower().replace(' ', '')} "
-        f"#sagesse #developpementpersonnel #motivation #reflexion"
+        f"pour comprendre pourquoi cette citation philosophique est plus pertinente "
+        f"que jamais dans notre monde moderne.\n\n"
+        f"On explore son contexte historique, le sens profond de ses mots, "
+        f"et surtout comment appliquer cette sagesse antique concretement "
+        f"dans ta vie quotidienne.\n\n"
+        f"📚 Ce que tu vas decouvrir :\n"
+        f"• L'histoire fascinante de {auteur} et pourquoi cette citation est nee\n"
+        f"• Le sens cache derriere chaque mot\n"
+        f"• Comment appliquer cette lecon de vie aux problemes modernes "
+        f"(anxiete, burnout, relations, reseaux sociaux)\n"
+        f"• Un exercice pratique a faire des maintenant\n\n"
+        f"Cette video aborde la philosophie, le stoicisme, le developpement personnel "
+        f"et les citations inspirantes qui ont traverse les siecles. "
+        f"Que tu sois passionne de sagesse stoicienne, d'existentialisme, "
+        f"ou simplement en quete de sens et de motivation, "
+        f"cette reflexion est pour toi.\n\n"
+        f"Si cette video t'a fait voir les choses autrement, "
+        f"laisse un commentaire avec ta propre interpretation de cette citation.\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔔 Abonne-toi pour une dose quotidienne de sagesse\n"
+        f"📱 TikTok : @CitationDuJour\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"#Citations #Philosophie #Sagesse #Stoicisme #DeveloppementPersonnel "
+        f"#{auteur_tag} #CitationDuJour #Motivation #LeconsDeVie #PenseesPositives"
     )
 
 

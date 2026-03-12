@@ -245,3 +245,25 @@ def history_shorts():
         except Exception:
             pass
     return {"executions": executions, "count": len(executions)}
+
+
+# ============================================================
+# YouTube Channel Setup
+# ============================================================
+
+@app.post("/setup/youtube-channel")
+async def setup_youtube_channel():
+    """Configure la chaine YouTube : description, keywords, branding SEO."""
+    from youtube import channel_setup
+    try:
+        result = channel_setup.configure_channel()
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/channel/youtube")
+def get_youtube_channel():
+    """Retourne les infos actuelles de la chaine YouTube."""
+    from youtube import channel_setup
+    return channel_setup.get_channel_info()

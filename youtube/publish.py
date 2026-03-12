@@ -127,13 +127,17 @@ def upload_youtube(
     if len(title) > 100:
         title = title[:97] + "..."
 
+    # Fusionner tags video + tags SEO par defaut
+    from .channel_setup import DEFAULT_VIDEO_TAGS
+    merged_tags = list(dict.fromkeys(tags + DEFAULT_VIDEO_TAGS))  # deduplique
+
     # Metadata
     metadata = {
         "snippet": {
             "title": title,
             "description": description,
-            "tags": tags[:50],  # YouTube limite a 500 chars total de tags
-            "categoryId": "22",  # People & Blogs
+            "tags": merged_tags[:30],
+            "categoryId": "27",  # Education
             "defaultLanguage": "fr",
             "defaultAudioLanguage": "fr",
         },
