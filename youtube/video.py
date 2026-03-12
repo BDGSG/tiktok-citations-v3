@@ -40,10 +40,10 @@ def _build_clip(
     # zoompan: z interpole lineairement de z_start a z_end
     z_expr = f"'{z_start}+({z_end}-{z_start})*on/{total_frames}'"
 
-    # Upscale image 2x pour avoir de la marge pour le zoom
+    # zoompan gere le scaling en interne — pas besoin d'upscale
     vf = (
-        f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,"
-        f"crop={w * 2}:{h * 2},"
+        f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+        f"crop={w}:{h},"
         f"zoompan=z={z_expr}:x={x_expr}:y={y_expr}"
         f":d={total_frames}:s={w}x{h}:fps={fps},"
         f"setsar=1,format=yuv420p,"
@@ -57,7 +57,7 @@ def _build_clip(
         f"-c:v libx264 -preset fast -crf 20 -r {fps} -an "
         f'"{clip_path}"'
     )
-    run_ffmpeg(cmd, timeout=180)
+    run_ffmpeg(cmd, timeout=300)
     return clip_path
 
 
