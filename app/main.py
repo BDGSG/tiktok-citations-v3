@@ -46,6 +46,20 @@ async def lifespan(app: FastAPI):
         f"YouTube scheduler: daily at {yt_config.SCHEDULE_HOUR:02d}:{yt_config.SCHEDULE_MINUTE:02d} {config.TZ}"
     )
 
+    # Job Shorts Sagesse
+    from shorts import config as shorts_config
+    from shorts import pipeline as shorts_pipeline
+    shorts_config.init_directories()
+    scheduler.add_job(
+        shorts_pipeline.run_pipeline_sync,
+        CronTrigger(hour=shorts_config.SCHEDULE_HOUR, minute=shorts_config.SCHEDULE_MINUTE),
+        id="daily_shorts",
+        replace_existing=True,
+    )
+    logger.info(
+        f"Shorts scheduler: daily at {shorts_config.SCHEDULE_HOUR:02d}:{shorts_config.SCHEDULE_MINUTE:02d} {config.TZ}"
+    )
+
     scheduler.start()
     yield
     scheduler.shutdown()
@@ -53,9 +67,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Citations Pipeline — TikTok & YouTube",
-    description="Pipeline automatise de generation de videos TikTok (4-5min) et YouTube (10-20min)",
-    version="3.1.0",
+    title="Citations Pipeline — TikTok, YouTube & Shorts",
+    description="Pipeline automatise: TikTok (4-5min), YouTube (10-20min), Shorts Sagesse (15-45s)",
+    version="3.2.0",
     lifespan=lifespan,
 )
 
@@ -70,12 +84,15 @@ def health():
     """Health check global."""
     from youtube import pipeline as yt_pipeline
     from youtube import config as yt_config
+    from shorts import pipeline as shorts_pipeline
+    from shorts import config as shorts_config
 
     tiktok_job = scheduler.get_job("daily_citation")
     youtube_job = scheduler.get_job("daily_youtube")
+    shorts_job = scheduler.get_job("daily_shorts")
     return {
         "status": "ok",
-        "version": "3.1.0",
+        "version": "3.2.0",
         "tiktok": {
             "last_run_status": pipeline.last_run_status,
             "last_run_time": pipeline.last_run_time,
@@ -94,6 +111,14 @@ def health():
                 "target_duration": "10-20 min",
                 "script_words": f"{yt_config.SCRIPT_MIN_WORDS}-{yt_config.SCRIPT_MAX_WORDS}",
             },
+        },
+        "shorts": {
+            "last_run_status": shorts_pipeline.last_run_status,
+            "last_run_time": shorts_pipeline.last_run_time,
+            "last_run_error": shorts_pipeline.last_run_error,
+            "next_run": str(shorts_job.next_run_time) if shorts_job else "not scheduled",
+            "schedule": f"{shorts_config.SCHEDULE_HOUR:02d}:{shorts_config.SCHEDULE_MINUTE:02d} {config.TZ}",
+            "content_types": shorts_config.CONTENT_TYPES,
         },
     }
 
@@ -185,3 +210,38 @@ def history_youtube_by_date(date: str):
         return {"error": f"No YouTube execution found for {date}"}
     with open(log_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+# ============================================================
+# Shorts Sagesse endpoints
+# ============================================================
+
+@app.post("/trigger/shorts")
+async def trigger_shorts(background_tasks: BackgroundTasks):
+    """Declenche manuellement le pipeline Shorts Sagesse."""
+    from shorts import pipeline as shorts_pipeline
+    if shorts_pipeline.last_run_status == "running":
+        return {"status": "already_running", "started_at": shorts_pipeline.last_run_time}
+    background_tasks.add_task(shorts_pipeline.run_pipeline_sync)
+    return {"status": "triggered", "message": "Shorts Sagesse Pipeline started in background"}
+
+
+@app.get("/history/shorts")
+def history_shorts():
+    """Retourne les 30 dernieres executions Shorts."""
+    from shorts import config as shorts_config
+    history_dir = shorts_config.SHORTS_HISTORY_DIR
+    if not os.path.isdir(history_dir):
+        return {"executions": []}
+    files = sorted(
+        [f for f in os.listdir(history_dir) if f.endswith(".json")],
+        reverse=True,
+    )[:30]
+    executions = []
+    for f in files:
+        try:
+            with open(os.path.join(history_dir, f), "r", encoding="utf-8") as fh:
+                executions.append(json.load(fh))
+        except Exception:
+            pass
+    return {"executions": executions, "count": len(executions)}

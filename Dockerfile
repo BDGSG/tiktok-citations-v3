@@ -15,6 +15,7 @@ COPY . .
 
 RUN mkdir -p /data/tiktok_citations_v3/{audio,images,videos,clips,music,sfx,fonts,history}
 RUN mkdir -p /data/tiktok_citations_v3/youtube/{audio,images,videos,clips,thumbnails,history}
+RUN mkdir -p /data/tiktok_citations_v3/shorts/{videos,images,audio,history}
 
 RUN cp /app/Montserrat-ExtraBold.ttf /data/tiktok_citations_v3/fonts/ 2>/dev/null || true
 
