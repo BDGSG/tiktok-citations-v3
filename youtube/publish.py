@@ -16,10 +16,22 @@ logger = logging.getLogger("youtube-citations")
 # ============================================================
 
 def _read_youtube_token() -> dict | None:
-    """Lit le token YouTube depuis le fichier."""
+    """Lit le token YouTube depuis le fichier ou l'env var YOUTUBE_TOKEN_JSON (base64)."""
     if not os.path.isfile(config.YT_TOKEN_PATH):
-        logger.warning(f"YouTube: token file not found: {config.YT_TOKEN_PATH}")
-        return None
+        # Essayer de restaurer depuis env var base64
+        b64 = os.getenv("YOUTUBE_TOKEN_JSON", "")
+        if b64:
+            try:
+                token_data = base64.b64decode(b64).decode("utf-8")
+                Path(config.YT_TOKEN_PATH).parent.mkdir(parents=True, exist_ok=True)
+                Path(config.YT_TOKEN_PATH).write_text(token_data)
+                logger.info("YouTube: token restored from YOUTUBE_TOKEN_JSON env var")
+            except Exception as e:
+                logger.error(f"YouTube: failed to decode YOUTUBE_TOKEN_JSON: {e}")
+                return None
+        else:
+            logger.warning(f"YouTube: token file not found: {config.YT_TOKEN_PATH}")
+            return None
     with open(config.YT_TOKEN_PATH, "r") as f:
         return json.load(f)
 
