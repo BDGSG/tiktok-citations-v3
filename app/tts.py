@@ -93,7 +93,10 @@ def _clean_script(raw: str) -> str:
     # Supprimer les indications de mots entre parentheses (ex: "(150-200 mots)")
     text = re.sub(r"\(\d+-\d+\s*mots?\)", "", text, flags=re.I)
     # Supprimer les titres de sections en majuscules seuls sur une ligne
-    text = re.sub(r"^\s*(?:INTRO(?:\s+HOOK)?|CONTEXTE|CONCLUSION|CTA|CLIMAX|EXERCICE|OBJECTION|REVELATION|APPLICATION|GENESE|CITATION EXPLIQUEE)[^\n]*$", "", text, flags=re.MULTILINE | re.I)
+    text = re.sub(
+        r"^\s*(?:INTRO(?:\s+HOOK)?|HOOK\s+D.OUVERTURE|CONTEXTE(?:\s+\+\s*PROMESSE)?|CONCLUSION|CTA|CLIMAX(?:\s+EMOTIONNEL)?|EXERCICE(?:\s+CONCRET)?|OBJECTION|REVELATION(?:\s+PROFONDE)?|APPLICATION(?:\s+MODERNE|\s+HISTORIQUE)?|GENESE|CITATION\s+(?:EXPLIQUEE|DECRYPTEE)|L.HISTOIRE\s+DU\s+PENSEUR)[^\n]*$",
+        "", text, flags=re.MULTILINE | re.I,
+    )
     # Supprimer lignes "---" restantes
     text = re.sub(r"^-{2,}\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"\s+", " ", text).strip()

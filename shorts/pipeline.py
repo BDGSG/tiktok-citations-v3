@@ -37,6 +37,7 @@ async def run_pipeline():
 
         config.init_directories()
         app_config.init_directories()
+        music_mod.ensure_music_exists()
 
         # 1. Generer contenu (Kie.ai — court)
         logger.info("Step 1/5: Generating content...")

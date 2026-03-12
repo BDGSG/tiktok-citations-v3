@@ -96,6 +96,9 @@ async def run_pipeline():
 
         config.init_directories()
 
+        # 0. Generer musique ambient si necessaire
+        music_mod.ensure_music_exists()
+
         # 1. Charger historique
         logger.info("Step 1/7: Loading history...")
         history = publish_mod.load_sheet_history()

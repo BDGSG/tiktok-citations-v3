@@ -10,6 +10,24 @@ logger = logging.getLogger("youtube-citations")
 KIE_CHAT_URL = "https://api.kie.ai/api/v1/chat/completions"
 
 
+def _fix_encoding(text: str) -> str:
+    """Corrige le double-encodage UTF-8 (bytes UTF-8 interpretes comme CP1252/Latin-1).
+
+    Detecte le pattern classique: e.g. 'Ã©' au lieu de 'é', 'â€™' au lieu de '''.
+    """
+    # Patterns typiques de double-encodage UTF-8 -> CP1252
+    if not any(marker in text for marker in ("Ã", "â€", "Ã©", "Ã¨", "Ã ", "Ãª", "Ã®", "Ã´", "Ã¹")):
+        return text
+    try:
+        return text.encode("cp1252").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        try:
+            return text.encode("latin-1").decode("utf-8")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            logger.warning("Encoding fix failed, returning original text")
+            return text
+
+
 def build_exclusion_text(history: list[dict]) -> str:
     """Construit le texte d'exclusion a partir de l'historique."""
     if not history:
@@ -63,6 +81,8 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
         f"Kie.ai resp: {len(content)}c, finish={finish}, "
         f"tokens={usage.get('completion_tokens', '?')}/{usage.get('total_tokens', '?')}"
     )
+    # Fix double-encodage UTF-8 courant avec Kie.ai
+    content = _fix_encoding(content)
     return content
 
 
@@ -168,7 +188,7 @@ STRUCTURE NARRATIVE (enchaine naturellement, SANS ecrire les titres) :
     )
     script = re.sub(r"\(\d+-\d+\s*mots?\)", "", script, flags=re.I)
     script = re.sub(
-        r"^\s*(?:INTRO(?:\s+HOOK)?|CONTEXTE|CONCLUSION|CTA|CLIMAX|EXERCICE|OBJECTION|REVELATION|APPLICATION|GENESE|CITATION EXPLIQUEE)[^\n]*$",
+        r"^\s*(?:INTRO(?:\s+HOOK)?|HOOK\s+D.OUVERTURE|CONTEXTE(?:\s+\+\s*PROMESSE)?|CONCLUSION|CTA|CLIMAX(?:\s+EMOTIONNEL)?|EXERCICE(?:\s+CONCRET)?|OBJECTION|REVELATION(?:\s+PROFONDE)?|APPLICATION(?:\s+MODERNE|\s+HISTORIQUE)?|GENESE|CITATION\s+(?:EXPLIQUEE|DECRYPTEE)|L.HISTOIRE\s+DU\s+PENSEUR)[^\n]*$",
         "", script, flags=re.MULTILINE | re.I,
     )
     script = re.sub(r"^-{2,}\s*$", "", script, flags=re.MULTILINE)
@@ -341,6 +361,14 @@ def generate_content(exclusion_text: str = "") -> dict:
         logger.warning(f"Image prompts failed: {e}, using fallback")
         image_prompts = _fallback_image_prompts(auteur)
 
+    # Fallback description si vide
+    yt_description = meta.get("yt_description", "")
+    if not yt_description or len(yt_description) < 50:
+        yt_description = _build_fallback_description(citation, auteur, epoque, script[:300])
+
+    # Generer les chapitres automatiques depuis le script
+    chapitres = _extract_chapters(script)
+
     # Assembler le contenu final
     content = {
         "citation": citation,
@@ -352,14 +380,14 @@ def generate_content(exclusion_text: str = "") -> dict:
         "hook_text": meta.get("hook_text", ""),
         "takeaway": meta.get("takeaway", ""),
         "yt_title": meta.get("yt_title", f"{citation[:40]} — {auteur}"),
-        "yt_description": meta.get("yt_description", ""),
+        "yt_description": yt_description,
         "yt_tags": meta.get("yt_tags", []),
         "categorie": meta.get("categorie", "philosophie"),
         "tags": meta.get("tags", []),
-        "cta_text": meta.get("cta_text", "Abonne-toi et active la cloche"),
+        "cta_text": meta.get("cta_text", "Si cette idée t'a fait voir les choses autrement, tu sais quoi faire."),
         "mood": meta.get("mood", "dark_motivation"),
         "thumbnail_text": meta.get("thumbnail_text", auteur.upper()),
-        "chapitres": [],
+        "chapitres": chapitres,
     }
 
     content = _validate(content)
@@ -370,6 +398,61 @@ def generate_content(exclusion_text: str = "") -> dict:
         f"Title: {content.get('yt_title', 'N/A')}"
     )
     return content
+
+
+def _build_fallback_description(citation: str, auteur: str, epoque: str, script_excerpt: str) -> str:
+    """Genere une description YouTube SEO de secours si le LLM n'en a pas fourni."""
+    return (
+        f'"{citation}" — {auteur}\n\n'
+        f"Dans cette video, on plonge dans la pensee de {auteur} ({epoque}) "
+        f"pour comprendre pourquoi cette citation est plus pertinente que jamais. "
+        f"On explore son contexte historique, son sens profond, et surtout comment "
+        f"l'appliquer concretement dans ta vie quotidienne.\n\n"
+        f"Cette video aborde des themes comme la philosophie, le developpement personnel, "
+        f"la sagesse antique appliquee aux problemes modernes (anxiete, burnout, "
+        f"relations, reseaux sociaux). Que tu sois passionné de stoicisme, "
+        f"d'existentialisme ou simplement en quete de sens, cette reflexion est pour toi.\n\n"
+        f"Si cette video t'a fait voir les choses autrement, laisse un commentaire "
+        f"avec ta propre interpretation.\n\n"
+        f"#philosophie #citationdujour #{auteur.lower().replace(' ', '')} "
+        f"#sagesse #developpementpersonnel #motivation #reflexion"
+    )
+
+
+def _extract_chapters(script: str) -> list[dict]:
+    """Extrait des chapitres automatiques du script base sur la structure narrative.
+
+    Decoupe le script en segments reguliers et genere des titres descriptifs.
+    """
+    words = script.split()
+    total_words = len(words)
+    if total_words < 500:
+        return []
+
+    # Decouper en ~8 chapitres pour une video 10-20 min
+    nb_chapters = min(10, max(6, total_words // 250))
+    words_per_chapter = total_words // nb_chapters
+
+    chapter_titles = [
+        "Introduction",
+        "Le contexte",
+        "L'histoire du penseur",
+        "La citation décryptée",
+        "L'exemple historique",
+        "Application moderne",
+        "L'objection",
+        "La révélation",
+        "L'exercice pratique",
+        "Conclusion",
+    ]
+
+    chapitres = []
+    for i in range(nb_chapters):
+        mot_idx = i * words_per_chapter
+        titre = chapter_titles[i] if i < len(chapter_titles) else f"Partie {i + 1}"
+        chapitres.append({"titre": titre, "mot_index_approx": mot_idx})
+
+    return chapitres
 
 
 def _validate(content: dict) -> dict:
