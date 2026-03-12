@@ -248,9 +248,11 @@ async def run_pipeline():
         logger.info(f"{'=' * 60}")
 
     except Exception as e:
+        import traceback
         elapsed = time.time() - start
         last_run_status = "error"
-        last_run_error = str(e)
+        tb = traceback.format_exc()
+        last_run_error = f"{e}\n\nTRACEBACK:\n{tb[-1000:]}"
         logger.error(f"YouTube Pipeline FAILED after {elapsed:.0f}s: {e}", exc_info=True)
         try:
             publish_mod.send_telegram_error(str(e))

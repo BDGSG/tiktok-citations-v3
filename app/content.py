@@ -156,6 +156,10 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
         resp.raise_for_status()
         data = resp.json()
 
+    if "choices" not in data:
+        error_msg = data.get("msg", data.get("message", str(data)))
+        raise RuntimeError(f"Kie.ai API error: {error_msg}")
+
     return data["choices"][0]["message"]["content"]
 
 
