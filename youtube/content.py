@@ -49,7 +49,20 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
     with httpx.Client(timeout=300) as client:
         resp = client.post(KIE_CHAT_URL, headers=headers, json=body)
         resp.raise_for_status()
-        data = resp.json()
+
+        # Log raw response pour debug
+        raw_text = resp.text
+        logger.info(f"Kie.ai raw response: {len(raw_text)} chars, status={resp.status_code}")
+        if len(raw_text) < 100:
+            logger.warning(f"Kie.ai: very short response: {raw_text}")
+
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"Kie.ai: HTTP response JSON parse failed: {e}")
+            logger.error(f"Kie.ai: raw resp first 500c: {raw_text[:500]}")
+            logger.error(f"Kie.ai: raw resp last 500c: {raw_text[-500:]}")
+            raise RuntimeError(f"Kie.ai API returned malformed JSON ({len(raw_text)} chars): {e}")
 
     content = data["choices"][0]["message"]["content"]
     finish = data["choices"][0].get("finish_reason", "?")
