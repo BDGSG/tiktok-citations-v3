@@ -183,6 +183,28 @@ async def run_pipeline():
         except Exception as e:
             logger.warning(f"TikTok upload failed (non-blocking): {e}")
 
+        # YouTube Shorts (prive, non-blocking)
+        try:
+            from youtube import publish as yt_publish_mod
+            tags_str = " ".join(f"#{t}" for t in content_result.get("tags", [])[:5])
+            short_title = f"{content_result.get('hook', content_result.get('citation', '')[:50])} #Shorts {tags_str}"
+            if len(short_title) > 100:
+                short_title = short_title[:97] + "..."
+            short_content = {
+                "yt_title": short_title,
+                "yt_description": (
+                    f'"{content_result["citation"]}"\n'
+                    f"— {content_result['auteur']}\n\n"
+                    f"{content_result.get('takeaway', '')}\n\n"
+                    f"#Shorts #citationdujour #motivation #philosophie {tags_str}"
+                ),
+                "yt_tags": ["Shorts", "citationdujour", "motivation", "philosophie"]
+                    + content_result.get("tags", [])[:5],
+            }
+            yt_publish_mod.upload_youtube(final_video, short_content)
+        except Exception as e:
+            logger.warning(f"YouTube Shorts upload failed (non-blocking): {e}")
+
         elapsed = time.time() - start
         last_run_status = "success"
         logger.info(f"{'=' * 60}")
