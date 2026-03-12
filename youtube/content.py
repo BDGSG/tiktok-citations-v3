@@ -46,33 +46,36 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
     }
 
     logger.info(f"Kie.ai call: system={len(system)}c, user={len(user_prompt)}c")
-    with httpx.Client(timeout=300) as client:
-        resp = client.post(KIE_CHAT_URL, headers=headers, json=body)
-        resp.raise_for_status()
 
-        # Log raw response pour debug
-        raw_text = resp.text
-        logger.info(f"Kie.ai raw response: {len(raw_text)} chars, status={resp.status_code}")
-        if len(raw_text) < 100:
-            logger.warning(f"Kie.ai: very short response: {raw_text}")
+    # Use streaming to ensure we get the complete response
+    timeout = httpx.Timeout(30.0, read=600.0)  # 10min read timeout
+    with httpx.Client(timeout=timeout) as client:
+        with client.stream("POST", KIE_CHAT_URL, headers=headers, json=body) as resp:
+            resp.raise_for_status()
+            # Read full response body via streaming
+            chunks = []
+            for chunk in resp.iter_bytes():
+                chunks.append(chunk)
+            raw_bytes = b"".join(chunks)
 
-        try:
-            data = resp.json()
-        except json.JSONDecodeError as e:
-            logger.error(f"Kie.ai: HTTP response JSON parse failed: {e}")
-            logger.error(f"Kie.ai: raw resp first 500c: {raw_text[:500]}")
-            logger.error(f"Kie.ai: raw resp last 500c: {raw_text[-500:]}")
-            raise RuntimeError(f"Kie.ai API returned malformed JSON ({len(raw_text)} chars): {e}")
+    raw_text = raw_bytes.decode("utf-8")
+    logger.info(f"Kie.ai raw response: {len(raw_text)} chars")
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"Kie.ai JSON parse failed: {e}")
+        logger.error(f"Kie.ai first 300c: {raw_text[:300]}")
+        logger.error(f"Kie.ai last 300c: {raw_text[-300:]}")
+        raise RuntimeError(f"Kie.ai API malformed JSON ({len(raw_text)}c): {e}")
 
     content = data["choices"][0]["message"]["content"]
     finish = data["choices"][0].get("finish_reason", "?")
     usage = data.get("usage", {})
     logger.info(
-        f"Kie.ai resp: {len(content)}c, finish={finish}, "
+        f"Kie.ai content: {len(content)}c, finish={finish}, "
         f"tokens={usage.get('completion_tokens', '?')}/{usage.get('total_tokens', '?')}"
     )
-    if finish == "length":
-        logger.warning("Kie.ai: response truncated (finish_reason=length)!")
     return content
 
 
