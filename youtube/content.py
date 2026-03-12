@@ -72,21 +72,26 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
 
 def _generate_script_text(exclusion_text: str) -> tuple[str, str, str]:
     """Genere le script narration en texte brut. Retourne (script, citation_line, auteur_line)."""
-    system = """Tu es un createur YouTube francais specialise en motivation et philosophie.
-Ecris un ESSAI PHILOSOPHIQUE de 1500-2500 mots pour une video YouTube de 10-15 minutes.
-Le script sera lu a voix haute (vitesse 0.88x, voix masculine grave).
+    system = """Tu es un createur YouTube francais expert en storytelling philosophique.
+Tu fais des videos profondes qui appliquent la sagesse ancienne aux problemes modernes.
+Ton style : grave, direct, tutoiement, zero remplissage. Chaque phrase doit frapper.
 
-REGLES STRICTES :
+REGLES ABSOLUES :
 - Accents francais OBLIGATOIRES partout
 - Nombres en LETTRES
-- Tutoiement
-- [Pause] pour marquer les silences (10-15 par script)
+- Tutoiement exclusif
+- [Pause] pour les silences dramatiques (10-15 par script)
 - Mots anglais en phonetique francaise
-- ZERO remplissage, chaque mot doit compter
-- NE PAS ecrire les titres des sections (pas de "INTRO HOOK", "CONTEXTE", etc.)
-- NE PAS ecrire les numeros de parties (pas de "1.", "2.", etc.)
-- NE PAS indiquer le nombre de mots entre parentheses
-- Le script doit etre UNIQUEMENT le texte narré, rien d'autre
+- NE JAMAIS ecrire de titres de sections, numeros de parties, ou indications de structure
+- Le script est UNIQUEMENT le texte narre a voix haute, rien d'autre
+- Pas de "Salut", "Hey", "Bienvenue" — commence direct par le hook
+
+STYLE NARRATIF :
+- Raconte des HISTOIRES, pas des cours. Utilise des anecdotes, des scenes vivantes.
+- Chaque concept doit etre illustre par un exemple concret et moderne
+- Alterne entre moments calmes (reflexion) et moments intenses (revelation)
+- Tous les 2-3 minutes, introduis un micro-hook (fait surprenant, question, retournement)
+- Applique la sagesse ancienne a des problemes d'aujourd'hui (anxiete, reseaux sociaux, burnout, relations)
 
 Ecris le script DIRECTEMENT en texte brut, PAS de JSON.
 Commence par une ligne CITATION: puis AUTEUR: puis le script."""
@@ -100,21 +105,31 @@ CITATION: [la citation complete]
 AUTEUR: [nom de l'auteur]
 EPOQUE: [contexte historique court]
 ---
-[Le script complet de 1500-2500 mots, structure en 12 parties]
+[Le script complet de 1500-2500 mots, ecrit comme un recit continu]
 
-Les 12 parties du script :
-1. INTRO HOOK (50-80 mots)
-2. CONTEXTE & PROMESSE (80-120 mots)
-3. L'AUTEUR & SON EPOQUE (150-200 mots)
-4. GENESE DE LA PENSEE (200-250 mots)
-5. CITATION EXPLIQUEE (200-300 mots)
-6. APPLICATION HISTORIQUE (150-200 mots)
-7. APPLICATION MODERNE (150-200 mots)
-8. L'OBJECTION (150-200 mots)
-9. REVELATION PROFONDE (150-200 mots)
-10. EXERCICE PRATIQUE (150-200 mots)
-11. CLIMAX EMOTIONNEL (100-150 mots)
-12. CONCLUSION & CTA (80-120 mots)"""
+STRUCTURE NARRATIVE (enchaine naturellement, SANS ecrire les titres) :
+
+- HOOK D'OUVERTURE : Commence par une affirmation CONTRARIANTE ou une question CHOC qui remet en cause une croyance populaire. Pas de presentation, pas de "aujourd'hui on va parler de". Frappe direct. Exemple de ton : "Tout ce que tu crois savoir sur le bonheur est faux." ou "L'homme le plus puissant de Rome ecrivait ceci a trois heures du matin."
+
+- CONTEXTE + PROMESSE : Pose les enjeux. Dis au spectateur ce qu'il va comprendre et pourquoi ca change tout. "A la fin de cette video, tu sauras exactement comment..."
+
+- L'HISTOIRE DU PENSEUR : Raconte la vie du philosophe comme une HISTOIRE, pas une biographie Wikipedia. Quels combats ? Quelles souffrances ? Pourquoi cette citation est nee de son vecu ?
+
+- LA CITATION DECRYPTEE : Explique la citation mot par mot. Qu'est-ce qu'elle dit VRAIMENT sous la surface ?
+
+- APPLICATION HISTORIQUE : Un exemple historique puissant qui prouve la verite de cette idee.
+
+- APPLICATION MODERNE : Transpose a un probleme d'AUJOURD'HUI (scrolling infini, anxiete de performance, relations superficielles, burnout, peur de l'echec). Sois precis et concret.
+
+- L'OBJECTION : Anticipe le "oui mais..." du spectateur. Detruis l'objection avec un argument imparable.
+
+- REVELATION PROFONDE : Le moment "aha". L'insight que personne ne voit. Le lien inattendu.
+
+- EXERCICE CONCRET : Un exercice praticable IMMEDIATEMENT. Pas vague. Precis, avec des etapes.
+
+- CLIMAX EMOTIONNEL : Le moment le plus intense. La phrase qui reste gravee.
+
+- CONCLUSION : Boucle avec le hook d'ouverture. Termine par une question ouverte qui pousse a la reflexion. CTA subtil : "Si cette idee t'a fait voir les choses autrement, tu sais quoi faire." Pas de "abonne-toi et like"."""
 
     raw = _call_kie_llm(system, user_prompt)
 
@@ -173,8 +188,10 @@ Les 12 parties du script :
 # ============================================================
 
 def _generate_metadata(citation: str, auteur: str, epoque: str, script_excerpt: str) -> dict:
-    """Genere les metadata YouTube en petit JSON."""
-    system = "Tu generes des metadata YouTube. Retourne UNIQUEMENT un JSON valide, sans backticks."
+    """Genere les metadata YouTube optimisees CTR en petit JSON."""
+    system = """Tu es un expert SEO YouTube specialise dans les videos philosophie/motivation francaises.
+Tu connais les formules de titres qui maximisent le CTR et les patterns de thumbnails qui attirent le clic.
+Retourne UNIQUEMENT un JSON valide, sans backticks, sans texte avant/apres."""
 
     user_prompt = f"""Genere les metadata YouTube pour cette video :
 
@@ -183,18 +200,41 @@ AUTEUR: {auteur}
 EPOQUE: {epoque}
 DEBUT DU SCRIPT: {script_excerpt}
 
-Retourne ce JSON (SANS backticks, SANS texte avant/apres) :
+REGLES POUR LE TITRE (yt_title) :
+- Max 60 caracteres (visible sur mobile)
+- Utilise une de ces formules prouvees :
+  * "[Auteur] a revele le secret de [desir]"
+  * "Cette sagesse de [X] ans va changer ta vision de [sujet]"
+  * "Pourquoi [Auteur] a dit [chose provocante]"
+  * "[Nombre] lecons de [Auteur] pour [probleme moderne]"
+- Cree un GAP DE CURIOSITE mais sans clickbait
+- Mets les mots les plus percutants EN PREMIER
+
+REGLES POUR LE THUMBNAIL (thumbnail_text) :
+- 2-4 MOTS MAXIMUM en majuscules
+- Emotionnel et impactant (pas descriptif)
+- Ne JAMAIS repeter le titre — le thumbnail COMPLETE le titre
+- Exemples : "TOUT EST FAUX", "IL SAVAIT", "ARRETE MAINTENANT", "LA VERITE"
+
+REGLES POUR LA DESCRIPTION (yt_description) :
+- 200+ mots minimum
+- Les 2 premieres lignes = resume percutant avec mots-cles naturels
+- Inclure : sagesse stoicienne, philosophie, developpement personnel, citations
+- Structure : resume > ce que tu vas apprendre > contexte > hashtags
+
+Retourne ce JSON :
 {{
-  "hook": "Question choc 8-15 mots",
-  "hook_text": "5-10 mots pour les 5 premieres secondes",
-  "yt_title": "Titre YouTube max 70 chars avec le nom de l'auteur",
-  "yt_tags": ["tag1", "tag2", "tag3"],
+  "hook": "Phrase d'ouverture contrariante ou question choc, 8-15 mots",
+  "hook_text": "3-7 mots percutants pour affichage texte dans les 5 premieres secondes",
+  "yt_title": "Titre YouTube max 60 chars, formule prouvee CTR",
+  "yt_description": "Description SEO 200+ mots avec mots-cles naturels",
+  "yt_tags": ["8-12 tags mix large et specifique", "inclure francais ET anglais"],
   "categorie": "stoicisme ou philosophie ou business ou spiritualite ou psychologie",
-  "tags": ["hashtag1", "hashtag2"],
-  "cta_text": "Phrase d'appel a l'action",
+  "tags": ["hashtag1", "hashtag2", "hashtag3"],
+  "cta_text": "CTA subtil et lie a la valeur, pas 'abonne-toi'",
   "mood": "dark_motivation ou contemplative ou warrior ou rebirth ou resilience",
-  "thumbnail_text": "3-5 MOTS CHOC EN MAJUSCULES",
-  "takeaway": "Lecon percutante en 15-25 mots"
+  "thumbnail_text": "2-4 MOTS CHOC MAXIMUM",
+  "takeaway": "La lecon percutante en 15-25 mots qui reste gravee"
 }}"""
 
     raw = _call_kie_llm(system, user_prompt)

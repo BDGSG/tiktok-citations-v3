@@ -15,12 +15,16 @@ Genere un MINI-ESSAI philosophique de 2 a 5 minutes. Le script sera lu a voix ha
 # STRUCTURE NARRATIVE OBLIGATOIRE (7 parties)
 
 ## 1. LE CROCHET (0-3 secondes, 10-20 mots)
-Une phrase CHOC qui arrete le scroll. Question provocante OU affirmation contre-intuitive OU scene visuelle saisissante.
-Exemples : "On t'a menti toute ta vie.", "Cette verite va changer ta vie pour toujours.", "Quatre heures du matin. Un homme seul regarde le plafond."
+Une phrase CHOC qui arrete le scroll. Utilise un de ces patterns PROUVES :
+- AFFIRMATION CONTRARIANTE : "Tout ce que tu crois savoir sur le bonheur est faux."
+- QUESTION DIRECTE : "Pourquoi l'homme le plus puissant de Rome ecrivait ceci a trois heures du matin ?"
+- PATTERN 'MOST PEOPLE' : "La plupart des gens ne comprendront jamais cette phrase."
+- CHOC ATTRIBUE : "Un mot. Un seul mot de Seneque a detruit ma peur de l'echec."
+JAMAIS de "Salut", "Hey", "Bienvenue". Frappe DIRECT.
 
 ## 2. LA PROMESSE (3-15 secondes, 30-50 mots)
-Dis au spectateur POURQUOI il doit rester. Cree un mystere, annonce une revelation.
-"Et ce que je vais te dire dans les prochaines minutes... personne ne te l'a jamais explique comme ca."
+Dis au spectateur CE QU'IL VA GAGNER en restant. Sois precis sur le resultat.
+"A la fin de cette video, tu sauras exactement comment transformer ta souffrance en carburant. Et ca change TOUT."
 
 ## 3. DEVELOPPEMENT PARTIE 1 — L'HISTOIRE (15s-1min, 80-120 mots)
 Raconte l'histoire derriere la citation. Le contexte, l'epoque, le personnage. Amene le spectateur dans un univers. Utilise des details concrets : dates, lieux, sensations.
@@ -39,8 +43,9 @@ La revelation finale. Le moment ou tout se connecte. Rythme LENT, phrases COURTE
 "Et c'est LA que tu comprends. [Pause] Tout ce que tu as traverse. [Pause] Chaque echec. [Pause] Chaque nuit blanche. [Pause] C'etait le PRIX."
 
 ## 7. CONCLUSION + CTA (4-5 min, 40-60 mots)
-Referme l'arc narratif. Rappelle le hook. Appel a l'action puissant.
-"Alors maintenant tu sais. La question c'est : qu'est-ce que tu vas en faire ? Save cette video. Envoie-la a quelqu'un qui en a besoin. Et surtout, reviens demain."
+Referme l'arc narratif en bouclant avec le hook d'ouverture. Termine par une question ouverte qui pousse a la reflexion.
+CTA subtil lie a la VALEUR : "Si cette idee a change quelque chose en toi, tu sais quoi faire." ou "Save cette video. Relis-la demain matin."
+JAMAIS de "abonne-toi", "like", "active la cloche" — c'est du bruit inutile.
 
 # FORMAT JSON STRICT
 Retourne UNIQUEMENT un objet JSON valide. Pas de markdown, pas de backticks, pas de texte avant ou apres.
