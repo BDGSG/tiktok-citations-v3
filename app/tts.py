@@ -83,8 +83,15 @@ CORRECTIONS: list[tuple[re.Pattern, str]] = [
 
 
 def _clean_script(raw: str) -> str:
-    """Nettoie le script brut (supprime [Pause], en-tetes de sections, normalise espaces)."""
+    """Nettoie le script brut (supprime [Pause], markdown, en-tetes de sections, normalise espaces)."""
     text = re.sub(r"\[Pause[^\]]*\]", "", raw, flags=re.I)
+    # Supprimer le formatage markdown (* ** *** _)
+    text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)  # *bold* **bold** ***bold***
+    text = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)     # _italic_ __bold__
+    text = re.sub(r"\*+", "", text)  # asterisques orphelins restants
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)  # titres markdown
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)  # listes markdown
+    text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)  # listes numerotees
     # Supprimer les en-tetes de sections LLM (ex: "1. INTRO HOOK (50-80 mots)")
     text = re.sub(
         r"^\s*\d{1,2}\.\s*[A-ZÉÈÊÀÂÔÙÛÎ][A-ZÉÈÊÀÂÔÙÛÎ\s&']+(?:\([^)]*\))?\s*$",

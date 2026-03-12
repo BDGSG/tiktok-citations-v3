@@ -1,4 +1,4 @@
-"""Assemblage video FFmpeg — format 16:9, clips, fades, color grading, YouTube-compatible."""
+"""Assemblage video FFmpeg — format 16:9, clips, fades, Ken Burns, color grading, YouTube-compatible."""
 import logging
 from pathlib import Path
 from . import config
@@ -6,20 +6,46 @@ from app.utils import run_ffmpeg
 
 logger = logging.getLogger("youtube-citations")
 
+# Patterns Ken Burns : (zoom_start, zoom_end, x_expr, y_expr)
+# Chaque pattern donne un mouvement different pour varier les clips
+_KENBURNS_PATTERNS = [
+    # Zoom in lent centre
+    (1.0, 1.15, "'iw/2-(iw/zoom/2)'", "'ih/2-(ih/zoom/2)'"),
+    # Zoom out lent centre
+    (1.15, 1.0, "'iw/2-(iw/zoom/2)'", "'ih/2-(ih/zoom/2)'"),
+    # Zoom in + pan droite
+    (1.0, 1.12, "'min(iw/zoom-iw/2,iw/zoom/2*on/n)'", "'ih/2-(ih/zoom/2)'"),
+    # Zoom in + pan gauche
+    (1.0, 1.12, "'max(0,iw/zoom/2-iw/zoom/2*on/n)'", "'ih/2-(ih/zoom/2)'"),
+    # Zoom out + pan haut
+    (1.12, 1.0, "'iw/2-(iw/zoom/2)'", "'max(0,ih/zoom/2-ih/zoom/4*on/n)'"),
+]
+
 
 def _build_clip(
     image_path: str, clip_path: str, index: int, duration: float
 ) -> str:
-    """Cree un clip 16:9 avec scale + crop + fade in/out."""
+    """Cree un clip 16:9 avec Ken Burns (zoom/pan lent) + fade in/out."""
     w = config.VIDEO_WIDTH
     h = config.VIDEO_HEIGHT
     fps = config.VIDEO_FPS
     fade_in = config.TRANSITION_FADE_IN
     fade_out_start = max(0, duration - config.TRANSITION_FADE_OUT)
 
+    # Selectionner un pattern Ken Burns (cycle)
+    pattern = _KENBURNS_PATTERNS[index % len(_KENBURNS_PATTERNS)]
+    z_start, z_end, x_expr, y_expr = pattern
+    total_frames = int(duration * fps)
+
+    # zoompan: z interpole lineairement de z_start a z_end
+    z_expr = f"'{z_start}+({z_end}-{z_start})*on/{total_frames}'"
+
+    # Upscale image 2x pour avoir de la marge pour le zoom
     vf = (
-        f"scale={w}:{h}:force_original_aspect_ratio=increase,"
-        f"crop={w}:{h},"
+        f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,"
+        f"crop={w * 2}:{h * 2},"
+        f"zoompan=z={z_expr}:x={x_expr}:y={y_expr}"
+        f":d={total_frames}:s={w}x{h}:fps={fps},"
         f"setsar=1,format=yuv420p,"
         f"fade=t=in:st=0:d={fade_in},"
         f"fade=t=out:st={fade_out_start}:d={config.TRANSITION_FADE_OUT}"
@@ -31,7 +57,7 @@ def _build_clip(
         f"-c:v libx264 -preset fast -crf 20 -r {fps} -an "
         f'"{clip_path}"'
     )
-    run_ffmpeg(cmd, timeout=120)
+    run_ffmpeg(cmd, timeout=180)
     return clip_path
 
 

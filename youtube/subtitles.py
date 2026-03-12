@@ -97,23 +97,36 @@ def generate_ass(
     total_duration: float,
     hook_text: str = "",
     cta_text: str = "Abonne-toi et active la cloche",
+    original_words: list[str] | None = None,
 ) -> str:
-    """Genere le contenu ASS pour YouTube 16:9."""
-    clean = re.sub(r"\[Pause[^\]]*\]", "", script, flags=re.I)
-    # Supprimer les en-tetes de sections LLM (ex: "1. INTRO HOOK (50-80 mots)")
-    clean = re.sub(
-        r"^\s*\d{1,2}\.\s*[A-ZÉÈÊÀÂÔÙÛÎ][A-ZÉÈÊÀÂÔÙÛÎ\s&']+(?:\([^)]*\))?\s*$",
-        "", clean, flags=re.MULTILINE,
-    )
-    clean = re.sub(r"\(\d+-\d+\s*mots?\)", "", clean, flags=re.I)
-    clean = re.sub(
-        r"^\s*(?:INTRO(?:\s+HOOK)?|HOOK\s+D.OUVERTURE|CONTEXTE(?:\s+\+\s*PROMESSE)?|CONCLUSION|CTA|CLIMAX(?:\s+EMOTIONNEL)?|EXERCICE(?:\s+CONCRET)?|OBJECTION|REVELATION(?:\s+PROFONDE)?|APPLICATION(?:\s+MODERNE|\s+HISTORIQUE)?|GENESE|CITATION\s+(?:EXPLIQUEE|DECRYPTEE)|L.HISTOIRE\s+DU\s+PENSEUR)[^\n]*$",
-        "", clean, flags=re.MULTILINE | re.I,
-    )
-    clean = re.sub(r"^-{2,}\s*$", "", clean, flags=re.MULTILINE)
-    clean = re.sub(r"\n", " ", clean)
-    clean = re.sub(r"\s+", " ", clean).strip()
-    raw_tokens = [w for w in clean.split() if w]
+    """Genere le contenu ASS pour YouTube 16:9.
+
+    Si original_words est fourni (depuis TTS), on l'utilise directement
+    pour garantir la sync avec les timepoints TTS.
+    """
+    if original_words:
+        # Utiliser exactement les memes mots que le TTS pour sync parfaite
+        raw_tokens = list(original_words)
+    else:
+        clean = re.sub(r"\[Pause[^\]]*\]", "", script, flags=re.I)
+        clean = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", clean)
+        clean = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", clean)
+        clean = re.sub(r"\*+", "", clean)
+        clean = re.sub(r"^#{1,6}\s+", "", clean, flags=re.MULTILINE)
+        clean = re.sub(r"^\s*[-*+]\s+", "", clean, flags=re.MULTILINE)
+        clean = re.sub(
+            r"^\s*\d{1,2}\.\s*[A-ZÉÈÊÀÂÔÙÛÎ][A-ZÉÈÊÀÂÔÙÛÎ\s&']+(?:\([^)]*\))?\s*$",
+            "", clean, flags=re.MULTILINE,
+        )
+        clean = re.sub(r"\(\d+-\d+\s*mots?\)", "", clean, flags=re.I)
+        clean = re.sub(
+            r"^\s*(?:INTRO(?:\s+HOOK)?|HOOK\s+D.OUVERTURE|CONTEXTE(?:\s+\+\s*PROMESSE)?|CONCLUSION|CTA|CLIMAX(?:\s+EMOTIONNEL)?|EXERCICE(?:\s+CONCRET)?|OBJECTION|REVELATION(?:\s+PROFONDE)?|APPLICATION(?:\s+MODERNE|\s+HISTORIQUE)?|GENESE|CITATION\s+(?:EXPLIQUEE|DECRYPTEE)|L.HISTOIRE\s+DU\s+PENSEUR)[^\n]*$",
+            "", clean, flags=re.MULTILINE | re.I,
+        )
+        clean = re.sub(r"^-{2,}\s*$", "", clean, flags=re.MULTILINE)
+        clean = re.sub(r"\n", " ", clean)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        raw_tokens = [w for w in clean.split() if w]
 
     words, timing_index_map = _merge_punctuation(raw_tokens)
     word_starts = _build_word_timings(words, timing_index_map, word_timings, total_duration)

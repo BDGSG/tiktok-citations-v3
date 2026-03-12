@@ -181,7 +181,8 @@ async def run_pipeline():
             audio_result.word_timings,
             audio_result.duration,
             content_result.get("hook_text", ""),
-            content_result.get("cta_text", "Abonne-toi et active la cloche"),
+            content_result.get("cta_text", "Si cette idée t'a fait voir les choses autrement, tu sais quoi faire."),
+            original_words=audio_result.original_words,
         )
         ass_path = f"{config.YT_VIDEOS_DIR}/subs_{filename}.ass"
         with open(ass_path, "w", encoding="utf-8") as f:
