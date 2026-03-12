@@ -242,7 +242,7 @@ REGLES POUR LA DESCRIPTION (yt_description) :
 - Inclure naturellement ces mots-cles : citations philosophiques, sagesse stoicienne, philosophie, developpement personnel, lecons de vie, citations inspirantes
 - Structure : citation + resume percutant > ce que tu vas decouvrir (liste a puces) > contexte philosophique > CTA subtil > liens reseaux > hashtags SEO
 - Ajouter a la fin : #Citations #Philosophie #Sagesse #Stoicisme #DeveloppementPersonnel #CitationDuJour
-- Mentionner TikTok : @CitationDuJour
+- Mentionner TikTok : @cdjour
 
 Retourne ce JSON :
 {{
@@ -428,7 +428,7 @@ def _build_fallback_description(citation: str, auteur: str, epoque: str, script_
         f"laisse un commentaire avec ta propre interpretation de cette citation.\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🔔 Abonne-toi pour une dose quotidienne de sagesse\n"
-        f"📱 TikTok : @CitationDuJour\n"
+        f"📱 TikTok : @cdjour\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"#Citations #Philosophie #Sagesse #Stoicisme #DeveloppementPersonnel "
         f"#{auteur_tag} #CitationDuJour #Motivation #LeconsDeVie #PenseesPositives"
