@@ -78,7 +78,7 @@ Retourne UNIQUEMENT un objet JSON valide. Pas de markdown, pas de backticks, pas
     ...
   ],
   "hook_text": "Texte court affiche 5 premieres secondes (5-10 mots max)",
-  "image_prompts": ["prompt 1 en anglais", "prompt 2", "... (35-60 prompts)"],
+  "image_prompts": ["prompt 1 en anglais", "prompt 2", "... (20-40 prompts)"],
   "yt_title": "Titre YouTube accrocheur (max 70 caracteres, avec majuscules strategiques)",
   "yt_description": "Description YouTube complete avec timestamps et liens (400-600 mots)",
   "yt_tags": ["tag1", "tag2", "... (20-30 tags pour SEO YouTube)"],
@@ -89,7 +89,7 @@ Retourne UNIQUEMENT un objet JSON valide. Pas de markdown, pas de backticks, pas
   "thumbnail_text": "Texte COURT et CHOC pour la miniature (3-5 mots MAX, en majuscules)"
 }
 
-# REGLES IMAGE PROMPTS (35-60, en anglais)
+# REGLES IMAGE PROMPTS (20-40, en anglais)
 IMPORTANT : Les images sont affichees DANS L'ORDRE pendant la narration. Chaque image correspond a un bloc de ~40-50 mots du script. Les images DOIVENT illustrer ce qui est dit a ce moment precis.
 
 Format 16:9 OBLIGATOIRE (paysage, cinematique).
@@ -166,7 +166,7 @@ Dans script_complet, ecris les mots anglais en phonetique francaise.
 # AUTEURS VARIES
 Stoiciens, entrepreneurs, philosophes, leaders spirituels, ecrivains, scientifiques, guerriers, psychologues, mystiques...
 
-VERIFIE : script_complet fait-il 1500-3000 mots ? TOUS les accents ? AUCUN chiffre arabe ? Mots anglais en phonetique ? 35-60 image_prompts ? Chapitres coherents ?"""
+VERIFIE : script_complet fait-il 1500-3000 mots ? TOUS les accents ? AUCUN chiffre arabe ? Mots anglais en phonetique ? 20-40 image_prompts ? Chapitres coherents ?"""
 
 
 def build_exclusion_text(history: list[dict]) -> str:
@@ -198,6 +198,8 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
 
     body = {
         "model": "deepseek-chat",
+        "max_tokens": 16384,
+        "temperature": 0.85,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_prompt},
@@ -221,7 +223,7 @@ def generate_content(exclusion_text: str = "") -> dict:
 
 INSTRUCTIONS :
 1. script_complet entre 1500 et 3000 mots (10-20 minutes de narration)
-2. 35-60 image_prompts cinematiques en anglais, FORMAT 16:9
+2. 20-40 image_prompts cinematiques en anglais, FORMAT 16:9
 3. Structure en 12 parties avec chapitres
 4. yt_title accrocheur (max 70 chars)
 5. yt_description complete avec timestamps des chapitres
@@ -267,13 +269,43 @@ def _parse_json(text: str) -> dict:
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as e:
-        logger.warning(f"JSON invalide, tentative de reparation: {e}")
-        # Tenter de fermer les strings/arrays/objects tronques
+        logger.warning(f"JSON invalide (len={len(cleaned)}), tentative de reparation: {e}")
+
+        # Strategie 1: trouver le dernier champ JSON complet et couper la
+        # Chercher le dernier pattern "key": "value" ou "key": [...] complet
+        patterns = [
+            r'"[^"]+"\s*:\s*"[^"]*"(?=\s*[,}])',  # "key": "value"
+            r'"[^"]+"\s*:\s*\[[^\]]*\](?=\s*[,}])',  # "key": [...]
+            r'"[^"]+"\s*:\s*\d+(?=\s*[,}])',  # "key": 123
+            r'"[^"]+"\s*:\s*(?:true|false|null)(?=\s*[,}])',  # "key": true
+        ]
+
+        best_end = -1
+        for pat in patterns:
+            for m in re.finditer(pat, cleaned):
+                if m.end() > best_end:
+                    best_end = m.end()
+
+        if best_end > 0:
+            truncated = cleaned[:best_end]
+            # Nettoyer une virgule finale
+            truncated = truncated.rstrip().rstrip(',')
+            # Fermer les structures ouvertes
+            open_brackets = truncated.count('[') - truncated.count(']')
+            open_braces = truncated.count('{') - truncated.count('}')
+            truncated += ']' * max(0, open_brackets)
+            truncated += '}' * max(0, open_braces)
+            try:
+                result = json.loads(truncated)
+                logger.info(f"JSON repare avec succes (coupe a pos {best_end}/{len(cleaned)})")
+                return result
+            except json.JSONDecodeError:
+                pass
+
+        # Strategie 2: fermer naïvement les structures ouvertes
         repaired = cleaned
-        # Fermer une string non terminee
         if repaired.count('"') % 2 == 1:
             repaired += '"'
-        # Fermer les arrays/objects ouverts
         open_brackets = repaired.count('[') - repaired.count(']')
         open_braces = repaired.count('{') - repaired.count('}')
         repaired += ']' * max(0, open_brackets)
@@ -281,16 +313,7 @@ def _parse_json(text: str) -> dict:
         try:
             return json.loads(repaired)
         except json.JSONDecodeError:
-            # Derniere tentative : couper apres le dernier champ complet
-            last_good = max(repaired.rfind('",'), repaired.rfind('"],'), repaired.rfind('],'))
-            if last_good > 0:
-                truncated = repaired[:last_good + 1]
-                open_brackets = truncated.count('[') - truncated.count(']')
-                open_braces = truncated.count('{') - truncated.count('}')
-                truncated += ']' * max(0, open_brackets)
-                truncated += '}' * max(0, open_braces)
-                return json.loads(truncated)
-            raise
+            raise ValueError(f"JSON irrecuperable apres reparation (len={len(cleaned)})")
 
 
 def _validate(content: dict) -> dict:

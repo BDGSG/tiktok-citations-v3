@@ -79,7 +79,7 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 CLAUDE_MAX_TOKENS = 16384  # plus de tokens pour script long
 SCRIPT_MIN_WORDS = 1500
 SCRIPT_MAX_WORDS = 3000
-MIN_IMAGE_PROMPTS = 35
+MIN_IMAGE_PROMPTS = 20
 
 
 def init_directories():
