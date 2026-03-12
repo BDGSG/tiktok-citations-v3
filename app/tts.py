@@ -83,8 +83,19 @@ CORRECTIONS: list[tuple[re.Pattern, str]] = [
 
 
 def _clean_script(raw: str) -> str:
-    """Nettoie le script brut (supprime [Pause], normalise espaces)."""
+    """Nettoie le script brut (supprime [Pause], en-tetes de sections, normalise espaces)."""
     text = re.sub(r"\[Pause[^\]]*\]", "", raw, flags=re.I)
+    # Supprimer les en-tetes de sections LLM (ex: "1. INTRO HOOK (50-80 mots)")
+    text = re.sub(
+        r"^\s*\d{1,2}\.\s*[A-ZÉÈÊÀÂÔÙÛÎ][A-ZÉÈÊÀÂÔÙÛÎ\s&']+(?:\([^)]*\))?\s*$",
+        "", text, flags=re.MULTILINE,
+    )
+    # Supprimer les indications de mots entre parentheses (ex: "(150-200 mots)")
+    text = re.sub(r"\(\d+-\d+\s*mots?\)", "", text, flags=re.I)
+    # Supprimer les titres de sections en majuscules seuls sur une ligne
+    text = re.sub(r"^\s*(?:INTRO(?:\s+HOOK)?|CONTEXTE|CONCLUSION|CTA|CLIMAX|EXERCICE|OBJECTION|REVELATION|APPLICATION|GENESE|CITATION EXPLIQUEE)[^\n]*$", "", text, flags=re.MULTILINE | re.I)
+    # Supprimer lignes "---" restantes
+    text = re.sub(r"^-{2,}\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 

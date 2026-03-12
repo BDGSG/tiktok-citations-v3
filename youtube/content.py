@@ -83,6 +83,10 @@ REGLES STRICTES :
 - [Pause] pour marquer les silences (10-15 par script)
 - Mots anglais en phonetique francaise
 - ZERO remplissage, chaque mot doit compter
+- NE PAS ecrire les titres des sections (pas de "INTRO HOOK", "CONTEXTE", etc.)
+- NE PAS ecrire les numeros de parties (pas de "1.", "2.", etc.)
+- NE PAS indiquer le nombre de mots entre parentheses
+- Le script doit etre UNIQUEMENT le texte narré, rien d'autre
 
 Ecris le script DIRECTEMENT en texte brut, PAS de JSON.
 Commence par une ligne CITATION: puis AUTEUR: puis le script."""
@@ -141,6 +145,19 @@ Les 12 parties du script :
                 start = i + 1
         if start > 0:
             script = "\n".join(lines[start:]).strip()
+
+    # Nettoyer les en-tetes de sections que le LLM inclut parfois
+    script = re.sub(
+        r"^\s*\d{1,2}\.\s*[A-ZÉÈÊÀÂÔÙÛÎ][A-ZÉÈÊÀÂÔÙÛÎ\s&']+(?:\([^)]*\))?\s*$",
+        "", script, flags=re.MULTILINE,
+    )
+    script = re.sub(r"\(\d+-\d+\s*mots?\)", "", script, flags=re.I)
+    script = re.sub(
+        r"^\s*(?:INTRO(?:\s+HOOK)?|CONTEXTE|CONCLUSION|CTA|CLIMAX|EXERCICE|OBJECTION|REVELATION|APPLICATION|GENESE|CITATION EXPLIQUEE)[^\n]*$",
+        "", script, flags=re.MULTILINE | re.I,
+    )
+    script = re.sub(r"^-{2,}\s*$", "", script, flags=re.MULTILINE)
+    script = re.sub(r"\n{3,}", "\n\n", script).strip()
 
     word_count = len(script.split())
     logger.info(f"Script brut genere: {auteur} | {word_count} mots | citation: {citation[:50]}...")
