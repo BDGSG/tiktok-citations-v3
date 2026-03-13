@@ -1,4 +1,4 @@
-"""Assemblage video FFmpeg — format 16:9, clips, fades, Ken Burns, color grading, YouTube-compatible."""
+"""Assemblage video FFmpeg — format 16:9, clips, fades, pan lent, color grading, YouTube-compatible."""
 import logging
 from pathlib import Path
 from . import config
@@ -6,40 +6,43 @@ from app.utils import run_ffmpeg
 
 logger = logging.getLogger("youtube-citations")
 
-# Ken Burns leger : zoom subtil via zoompan a 10fps interne (resample a 30fps en sortie)
-# Patterns : (zoom_start, zoom_end)
-_KENBURNS_ZOOMS = [
-    (1.0, 1.08),   # Zoom in lent
-    (1.08, 1.0),   # Zoom out lent
-    (1.0, 1.06),   # Zoom in subtil
-    (1.06, 1.0),   # Zoom out subtil
-    (1.0, 1.10),   # Zoom in moyen
+# Pan patterns: direction du mouvement lent (dx, dy par frame normalise)
+# L'image est scalee a 112% puis crop anime pour simuler un mouvement
+_PAN_PATTERNS = [
+    ("left_to_right", "t*{margin}/{dur}", "{vmargin}/2"),
+    ("right_to_left", "{margin}-t*{margin}/{dur}", "{vmargin}/2"),
+    ("top_to_bottom", "{margin}/2", "t*{vmargin}/{dur}"),
+    ("bottom_to_top", "{margin}/2", "{vmargin}-t*{vmargin}/{dur}"),
+    ("center_static", "{margin}/2", "{vmargin}/2"),  # fallback statique avec scale
 ]
 
 
 def _build_clip(
     image_path: str, clip_path: str, index: int, duration: float
 ) -> str:
-    """Cree un clip 16:9 avec Ken Burns leger (zoom lent) + fade in/out."""
+    """Cree un clip 16:9 avec pan lent (scale 112% + crop anime) + fade in/out."""
     w = config.VIDEO_WIDTH
     h = config.VIDEO_HEIGHT
     fps = config.VIDEO_FPS
     fade_in = config.TRANSITION_FADE_IN
     fade_out_start = max(0, duration - config.TRANSITION_FADE_OUT)
 
-    # zoompan a 10fps interne pour performance, resample a 30fps en sortie
-    zp_fps = 10
-    total_frames = int(duration * zp_fps)
+    # Scale 112% puis crop anime pour simuler mouvement
+    scale_factor = 1.12
+    sw = int(w * scale_factor)
+    sh = int(h * scale_factor)
+    margin = sw - w    # marge horizontale pour pan
+    vmargin = sh - h   # marge verticale pour pan
 
-    z_start, z_end = _KENBURNS_ZOOMS[index % len(_KENBURNS_ZOOMS)]
-    z_expr = f"'{z_start}+({z_end}-{z_start})*on/{total_frames}'"
+    # Selectionner un pattern de pan
+    pattern_name, x_tpl, y_tpl = _PAN_PATTERNS[index % len(_PAN_PATTERNS)]
+    x_expr = x_tpl.format(margin=margin, vmargin=vmargin, dur=f"{duration:.3f}")
+    y_expr = y_tpl.format(margin=margin, vmargin=vmargin, dur=f"{duration:.3f}")
 
     vf = (
-        f"scale={w}:{h}:force_original_aspect_ratio=increase,"
-        f"crop={w}:{h},"
-        f"zoompan=z={z_expr}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-        f":d={total_frames}:s={w}x{h}:fps={zp_fps},"
-        f"fps={fps},"
+        f"scale={sw}:{sh}:force_original_aspect_ratio=increase,"
+        f"crop={sw}:{sh},"
+        f"crop={w}:{h}:{x_expr}:{y_expr},"
         f"setsar=1,format=yuv420p,"
         f"fade=t=in:st=0:d={fade_in},"
         f"fade=t=out:st={fade_out_start}:d={config.TRANSITION_FADE_OUT}"
@@ -48,10 +51,10 @@ def _build_clip(
     cmd = (
         f'ffmpeg -y -loop 1 -t {duration:.3f} -i "{image_path}" '
         f'-vf "{vf}" '
-        f"-c:v libx264 -preset ultrafast -crf 22 -r {fps} -an "
+        f"-c:v libx264 -preset fast -crf 20 -r {fps} -an "
         f'"{clip_path}"'
     )
-    run_ffmpeg(cmd, timeout=300)
+    run_ffmpeg(cmd, timeout=120)
     return clip_path
 
 
