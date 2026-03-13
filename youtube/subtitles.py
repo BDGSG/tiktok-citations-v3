@@ -98,14 +98,14 @@ def generate_ass(
     hook_text: str = "",
     cta_text: str = "Abonne-toi et active la cloche",
     original_words: list[str] | None = None,
+    word_start_times: list[float] | None = None,
 ) -> str:
     """Genere le contenu ASS pour YouTube 16:9.
 
-    Si original_words est fourni (depuis TTS), on l'utilise directement
-    pour garantir la sync avec les timepoints TTS.
+    Si word_start_times est fourni (timestamps pre-calcules par mot original),
+    on les utilise directement pour une sync parfaite avec la voix-off.
     """
     if original_words:
-        # Utiliser exactement les memes mots que le TTS pour sync parfaite
         raw_tokens = list(original_words)
     else:
         clean = re.sub(r"\[Pause[^\]]*\]", "", script, flags=re.I)
@@ -129,7 +129,23 @@ def generate_ass(
         raw_tokens = [w for w in clean.split() if w]
 
     words, timing_index_map = _merge_punctuation(raw_tokens)
-    word_starts = _build_word_timings(words, timing_index_map, word_timings, total_duration)
+
+    # Utiliser word_start_times pre-calcules si disponibles (sync parfaite)
+    if word_start_times and len(word_start_times) == len(raw_tokens):
+        # Remapper apres fusion ponctuation : chaque display word prend le
+        # timestamp du premier raw token qui le compose
+        word_starts = []
+        for i in range(len(words)):
+            raw_idx = timing_index_map[i] if i < len(timing_index_map) else -1
+            if 0 <= raw_idx < len(word_start_times):
+                word_starts.append(word_start_times[raw_idx])
+            elif word_starts:
+                word_starts.append(word_starts[-1] + 0.3)
+            else:
+                word_starts.append(0.0)
+    else:
+        word_starts = _build_word_timings(words, timing_index_map, word_timings, total_duration)
+
     groups = _group_words(words)
 
     logger.info(

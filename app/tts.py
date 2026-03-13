@@ -19,6 +19,7 @@ class AudioResult:
     word_timings: list[dict] = field(default_factory=list)
     original_words: list[str] = field(default_factory=list)
     word_count: int = 0
+    word_start_times: list[float] = field(default_factory=list)
 
 
 # ============================================================
@@ -254,6 +255,84 @@ def _synthesize_chunk(ssml: str) -> tuple[bytes, list[dict]]:
     return audio_bytes, timepoints
 
 
+def _map_timepoints_to_original(
+    original_words: list[str],
+    corrected_words: list[str],
+    timepoints: list[dict],
+    total_duration: float,
+) -> list[float]:
+    """Mappe les timepoints TTS (indexes sur corrected_words) vers original_words.
+
+    Utilise un mapping proportionnel par position de caractere pour eviter
+    la derive quand les conversions de nombres changent le nombre de mots
+    (ex: '2000' → 'deux mille' = 1 mot → 2 mots).
+    """
+    n_orig = len(original_words)
+    n_corr = len(corrected_words)
+
+    if not timepoints or not n_orig:
+        return [i * total_duration / max(n_orig, 1) for i in range(n_orig)]
+
+    # Construire lookup: corrected_word_index → time
+    corr_time_map = {}
+    for tp in timepoints:
+        corr_time_map[tp["index"]] = tp["time"]
+
+    # Construire positions de caracteres cumulees pour chaque liste
+    # pour mapper par position relative dans le texte
+    def _char_positions(words):
+        positions = []
+        pos = 0
+        for w in words:
+            positions.append(pos)
+            pos += len(w) + 1  # +1 pour l'espace
+        return positions, pos
+
+    orig_positions, orig_total = _char_positions(original_words)
+    corr_positions, corr_total = _char_positions(corrected_words)
+
+    word_start_times = []
+    for i in range(n_orig):
+        # Position relative du mot original dans le texte (0.0 → 1.0)
+        rel_pos = orig_positions[i] / max(orig_total, 1)
+
+        # Trouver le corrected_word a la meme position relative
+        target_char_pos = rel_pos * corr_total
+        corr_idx = 0
+        for j in range(n_corr):
+            if corr_positions[j] <= target_char_pos:
+                corr_idx = j
+            else:
+                break
+
+        # Chercher le timepoint le plus proche
+        if corr_idx in corr_time_map:
+            word_start_times.append(corr_time_map[corr_idx])
+        else:
+            # Trouver le timepoint le plus proche dans corr_time_map
+            if corr_time_map:
+                nearest = min(corr_time_map.keys(), key=lambda k: abs(k - corr_idx))
+                # Interpoler entre le nearest et sa distance
+                base_time = corr_time_map[nearest]
+                # Ajuster proportionnellement
+                if nearest != corr_idx and len(corr_time_map) > 1:
+                    sorted_keys = sorted(corr_time_map.keys())
+                    idx_in_sorted = min(range(len(sorted_keys)), key=lambda k: abs(sorted_keys[k] - corr_idx))
+                    if idx_in_sorted + 1 < len(sorted_keys):
+                        k1, k2 = sorted_keys[idx_in_sorted], sorted_keys[idx_in_sorted + 1]
+                        t1, t2 = corr_time_map[k1], corr_time_map[k2]
+                        frac = (corr_idx - k1) / max(k2 - k1, 1)
+                        word_start_times.append(t1 + frac * (t2 - t1))
+                    else:
+                        word_start_times.append(base_time)
+                else:
+                    word_start_times.append(base_time)
+            else:
+                word_start_times.append(i * total_duration / n_orig)
+
+    return word_start_times
+
+
 def generate_audio(script: str, filename: str) -> AudioResult:
     """Pipeline complet : clean -> convert -> correct -> SSML -> TTS -> save."""
     # 1. Clean
@@ -322,10 +401,16 @@ def generate_audio(script: str, filename: str) -> AudioResult:
     duration = get_audio_duration(output_path)
     logger.info(f"TTS: audio generated — {duration:.1f}s, {len(all_timepoints)} timepoints")
 
+    # 7. Mapper les timepoints (indexés sur corrected_words) vers original_words
+    word_start_times = _map_timepoints_to_original(
+        original_words, corrected_words, all_timepoints, duration
+    )
+
     return AudioResult(
         audio_path=output_path,
         duration=duration,
         word_timings=all_timepoints,
         original_words=original_words,
+        word_start_times=word_start_times,
         word_count=len(original_words),
     )
