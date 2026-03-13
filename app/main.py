@@ -267,3 +267,11 @@ def get_youtube_channel():
     """Retourne les infos actuelles de la chaine YouTube."""
     from youtube import channel_setup
     return channel_setup.get_channel_info()
+
+
+@app.post("/generate/intro")
+async def generate_intro(background_tasks: BackgroundTasks):
+    """Genere la video d'introduction de la chaine et l'uploade."""
+    from youtube import intro_video
+    background_tasks.add_task(intro_video.run_sync)
+    return {"status": "triggered", "message": "Intro video generation started in background"}

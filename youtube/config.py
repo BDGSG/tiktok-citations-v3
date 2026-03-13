@@ -59,6 +59,7 @@ MUSIC_FADE_OUT = 5.0
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GCP_API_KEY = os.getenv("GCP_API_KEY", "")
 KIE_API_KEY = os.getenv("KIE_API_KEY", "")
+HF_TOKEN = os.getenv("HF_TOKEN", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "7445971784")
 GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID_YT", os.getenv("GOOGLE_SHEETS_ID", ""))
