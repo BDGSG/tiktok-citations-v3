@@ -204,7 +204,7 @@ async def run_pipeline():
                 "yt_tags": ["Shorts", "citationdujour", "motivation", "philosophie"]
                     + content_result.get("tags", [])[:5],
             }
-            yt_publish_mod.upload_youtube(final_video, short_content)
+            yt_publish_mod.upload_youtube(final_video, short_content, is_short=True)
         except Exception as e:
             logger.warning(f"YouTube Shorts upload failed (non-blocking): {e}")
 
