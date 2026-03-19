@@ -39,16 +39,16 @@ TTS_PITCH = -1.5
 TTS_SAMPLE_RATE = 24000
 TTS_MAX_SSML_BYTES = 4500
 
-# -- Sous-titres 16:9 (plus petits, en bas) --
+# -- Sous-titres 16:9 (style competitif: dore + bold + glow) --
 SUBTITLE_FONT = "Montserrat ExtraBold"
-SUBTITLE_FONT_SIZE = 52
-SUBTITLE_HOOK_SIZE = 68
-SUBTITLE_CTA_SIZE = 44
-SUBTITLE_HL_COLOR = "&H0000D4FF&"  # Dore BGR
-SUBTITLE_NORMAL_COLOR = "&H80FFFFFF&"  # Blanc semi-transparent
-SUBTITLE_BG_COLOR = "&HA0000000&"  # Noir semi-transparent
+SUBTITLE_FONT_SIZE = 60
+SUBTITLE_HOOK_SIZE = 76
+SUBTITLE_CTA_SIZE = 48
+SUBTITLE_HL_COLOR = "&H0000D7FF&"  # Dore vif #FFD700 en BGR
+SUBTITLE_NORMAL_COLOR = "&H00FFFFFF&"  # Blanc opaque
+SUBTITLE_BG_COLOR = "&HC0000000&"  # Noir 75% opaque (meilleure lisibilite)
 SUBTITLE_WORDS_PER_GROUP = 4
-SUBTITLE_MARGIN_V = 80
+SUBTITLE_MARGIN_V = 70
 
 # -- Musique --
 MUSIC_VOLUME = 0.12  # un peu plus bas pour YouTube (video longue)

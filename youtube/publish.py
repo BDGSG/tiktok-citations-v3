@@ -100,6 +100,7 @@ def upload_youtube(
     video_path: str,
     content: dict,
     thumbnail_path: str | None = None,
+    is_short: bool = False,
 ) -> dict | None:
     """Upload une video sur YouTube en mode prive.
 
@@ -107,6 +108,7 @@ def upload_youtube(
         video_path: Chemin vers la video finale
         content: Dictionnaire du contenu genere (yt_title, yt_description, yt_tags, etc.)
         thumbnail_path: Chemin vers la miniature (optionnel)
+        is_short: True pour un YouTube Short (pas de merge DEFAULT_VIDEO_TAGS)
 
     Returns:
         Dictionnaire avec video_id et status, ou None si echec
@@ -127,17 +129,28 @@ def upload_youtube(
     if len(title) > 100:
         title = title[:97] + "..."
 
-    # Fusionner tags video + tags SEO par defaut
-    from .channel_setup import DEFAULT_VIDEO_TAGS
-    merged_tags = list(dict.fromkeys(tags + DEFAULT_VIDEO_TAGS))  # deduplique
+    if is_short:
+        # Shorts : tags specifiques, pas de merge avec DEFAULT_VIDEO_TAGS
+        # S'assurer que #Shorts est dans le titre pour la classification YouTube
+        if "#Shorts" not in title and "#shorts" not in title:
+            title = f"{title} #Shorts"
+            if len(title) > 100:
+                title = title[:97] + "..."
+        merged_tags = list(dict.fromkeys(tags))[:15]
+        category_id = "22"  # People & Blogs (standard pour Shorts)
+    else:
+        # Videos longues : merge avec tags SEO par defaut
+        from .channel_setup import DEFAULT_VIDEO_TAGS
+        merged_tags = list(dict.fromkeys(tags + DEFAULT_VIDEO_TAGS))[:30]
+        category_id = "27"  # Education
 
     # Metadata
     metadata = {
         "snippet": {
             "title": title,
             "description": description,
-            "tags": merged_tags[:30],
-            "categoryId": "27",  # Education
+            "tags": merged_tags,
+            "categoryId": category_id,
             "defaultLanguage": "fr",
             "defaultAudioLanguage": "fr",
         },

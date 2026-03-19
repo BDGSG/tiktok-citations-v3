@@ -168,9 +168,9 @@ PlayResY: {config.VIDEO_HEIGHT}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,{font},{fs},{nl},&H000000FF,&H00000000,{bg},1,0,0,0,100,100,0,0,3,3,0,2,100,100,{margin_v},1
-Style: Hook,{font},{config.SUBTITLE_HOOK_SIZE},&H00FFFF00,&H000000FF,&H00000000,&HB0000000,1,0,0,0,100,100,0,0,3,4,0,5,120,120,400,1
-Style: CTA,{font},{config.SUBTITLE_CTA_SIZE},&H00FFFFFF,&H000000FF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,3,3,0,5,100,100,300,1
+Style: Karaoke,{font},{fs},{nl},&H000000FF,&H00000000,{bg},1,0,0,0,100,100,0,0,3,4,2,2,100,100,{margin_v},1
+Style: Hook,{font},{config.SUBTITLE_HOOK_SIZE},&H00FFFF00,&H000000FF,&H00000000,&HC0000000,1,0,0,0,100,100,0,0,3,5,2,5,120,120,400,1
+Style: CTA,{font},{config.SUBTITLE_CTA_SIZE},&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,3,4,2,5,100,100,300,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

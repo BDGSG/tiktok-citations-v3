@@ -121,7 +121,7 @@ async def run_pipeline():
                 "yt_tags": ["Shorts", "sagesse", "motivation", "philosophie"]
                     + content_result.get("tags", [])[:5],
             }
-            result = yt_publish_mod.upload_youtube(final_video, short_content)
+            result = yt_publish_mod.upload_youtube(final_video, short_content, is_short=True)
             if result:
                 logger.info(f"YouTube Short uploaded: {result.get('video_id')}")
         except Exception as e:
