@@ -1,4 +1,4 @@
-"""Generation d'images Kie.ai Flux Kontext — batch parallele async."""
+"""Generation d'images — Kie.ai Flux Kontext + fallback Hugging Face."""
 import re
 import asyncio
 import logging
@@ -9,6 +9,7 @@ from . import config
 logger = logging.getLogger("citations-v3")
 
 KIE_API_BASE = "https://api.kie.ai/api/v1/flux/kontext"
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
 BATCH_SIZE = 5
 POLL_INTERVAL = 5  # secondes
 MAX_TIMEOUT = 180  # secondes par image
@@ -27,10 +28,12 @@ FALLBACK_PROMPT = (
     "cinematic teal and orange color grading, 4k ultrarealistic, 9:16 vertical"
 )
 
+# Flag global pour eviter de retenter Kie.ai quand les credits sont epuises
+_kie_disabled = False
+
 
 def _clean_prompt(prompt: str) -> str:
     """Supprime les references texte et ajoute le suffix cinematique."""
-    # Supprimer instructions de texte dans les prompts
     cleaned = re.sub(r"with.*?quote", "", prompt, flags=re.I)
     cleaned = re.sub(r"text.*?saying", "", cleaned, flags=re.I)
     cleaned = re.sub(r"words.*?written", "", cleaned, flags=re.I)
@@ -56,7 +59,14 @@ async def _create_task(client: httpx.AsyncClient, prompt: str) -> str:
     )
     resp.raise_for_status()
     data = resp.json()
-    task_id = data.get("data", {}).get("taskId") or data.get("taskId")
+
+    # Detecter credits insuffisants
+    if data.get("code") == 402 or (data.get("data") is None and "insufficient" in data.get("msg", "").lower()):
+        global _kie_disabled
+        _kie_disabled = True
+        raise RuntimeError(f"Kie.ai: credits insuffisants — {data.get('msg', '')}")
+
+    task_id = (data.get("data") or {}).get("taskId") or data.get("taskId")
     if not task_id:
         raise RuntimeError(f"Kie.ai: pas de taskId dans la reponse: {data}")
     return task_id
@@ -99,29 +109,67 @@ async def _download_image(client: httpx.AsyncClient, url: str, output_path: str)
     return output_path
 
 
+async def _generate_hf(client: httpx.AsyncClient, prompt: str, output_path: str) -> str:
+    """Genere une image via Hugging Face Inference API (FLUX.1-schnell)."""
+    resp = await client.post(
+        HF_API_URL,
+        headers={"Authorization": f"Bearer {config.HF_TOKEN}"},
+        json={"inputs": prompt},
+        timeout=120,
+    )
+    if resp.status_code == 503:
+        # Modele en chargement, attendre et retenter
+        wait = resp.json().get("estimated_time", 30)
+        logger.info(f"HF: modele en chargement, attente {wait:.0f}s...")
+        await asyncio.sleep(min(wait, 60))
+        resp = await client.post(
+            HF_API_URL,
+            headers={"Authorization": f"Bearer {config.HF_TOKEN}"},
+            json={"inputs": prompt},
+            timeout=120,
+        )
+    resp.raise_for_status()
+    Path(output_path).write_bytes(resp.content)
+    return output_path
+
+
 async def _generate_single(
     client: httpx.AsyncClient, prompt: str, index: int, filename: str
 ) -> str:
-    """Genere une seule image avec retry."""
+    """Genere une seule image avec retry. Fallback Kie.ai -> HF."""
     output_path = f"{config.IMAGES_DIR}/{filename}_{index:02d}.png"
 
-    for attempt in range(MAX_RETRIES + 1):
+    # Tenter Kie.ai si pas desactive
+    if not _kie_disabled and config.KIE_API_KEY:
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                current_prompt = prompt if attempt == 0 else _clean_prompt(FALLBACK_PROMPT)
+                task_id = await _create_task(client, current_prompt)
+                logger.debug(f"Image {index}: Kie.ai task {task_id} (attempt {attempt + 1})")
+                url = await _poll_task(client, task_id)
+                await _download_image(client, url, output_path)
+                logger.info(f"Image {index}: OK (Kie.ai)")
+                return output_path
+            except Exception as e:
+                if _kie_disabled:
+                    logger.warning(f"Image {index}: Kie.ai desactive, bascule sur HF")
+                    break
+                if attempt < MAX_RETRIES:
+                    logger.warning(f"Image {index}: Kie.ai retry {attempt + 1} ({e})")
+                else:
+                    logger.warning(f"Image {index}: Kie.ai echec apres {MAX_RETRIES + 1} tentatives, bascule sur HF")
+
+    # Fallback Hugging Face
+    if config.HF_TOKEN:
         try:
-            current_prompt = prompt if attempt == 0 else _clean_prompt(FALLBACK_PROMPT)
-            task_id = await _create_task(client, current_prompt)
-            logger.debug(f"Image {index}: task {task_id} (attempt {attempt + 1})")
-            url = await _poll_task(client, task_id)
-            await _download_image(client, url, output_path)
-            logger.info(f"Image {index}: OK")
+            await _generate_hf(client, prompt, output_path)
+            logger.info(f"Image {index}: OK (HuggingFace)")
             return output_path
         except Exception as e:
-            if attempt < MAX_RETRIES:
-                logger.warning(f"Image {index}: retry {attempt + 1} ({e})")
-            else:
-                logger.error(f"Image {index}: FAILED after {MAX_RETRIES + 1} attempts: {e}")
-                raise
-
-    return output_path  # unreachable, for type checker
+            logger.error(f"Image {index}: HF aussi en echec: {e}")
+            raise
+    else:
+        raise RuntimeError(f"Image {index}: Kie.ai et HF indisponibles (pas de HF_TOKEN)")
 
 
 async def generate_all_images(prompts: list[str], filename: str) -> list[str]:
@@ -134,6 +182,9 @@ async def generate_all_images(prompts: list[str], filename: str) -> list[str]:
     Returns:
         Liste ordonnee des chemins des images generees
     """
+    global _kie_disabled
+    _kie_disabled = False  # Reset a chaque run
+
     cleaned_prompts = [_clean_prompt(p) for p in prompts]
     image_paths: list[str | None] = [None] * len(cleaned_prompts)
     failed_indices: list[int] = []
@@ -143,8 +194,9 @@ async def generate_all_images(prompts: list[str], filename: str) -> list[str]:
             batch_end = min(batch_start + BATCH_SIZE, len(cleaned_prompts))
             batch_indices = list(range(batch_start, batch_end))
 
+            provider = "HuggingFace" if _kie_disabled else "Kie.ai"
             logger.info(
-                f"Image batch {batch_start // BATCH_SIZE + 1}: "
+                f"Image batch {batch_start // BATCH_SIZE + 1} ({provider}): "
                 f"indices {batch_start}-{batch_end - 1}"
             )
 
@@ -167,7 +219,6 @@ async def generate_all_images(prompts: list[str], filename: str) -> list[str]:
 
     # Fallback pour images echouees : utiliser l'image precedente ou suivante
     for i in failed_indices:
-        # Chercher la plus proche image reussie
         for offset in range(1, len(prompts)):
             if i - offset >= 0 and image_paths[i - offset]:
                 image_paths[i] = image_paths[i - offset]

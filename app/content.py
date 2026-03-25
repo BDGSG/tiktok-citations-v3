@@ -58,35 +58,38 @@ Retourne UNIQUEMENT un objet JSON valide. Pas de markdown, pas de backticks, pas
   "takeaway": "Lecon percutante en 15-25 mots",
   "script_complet": "Le script narration complet (400-700 mots). STRUCTURE en 7 parties. Utilise [Pause] pour marquer les silences strategiques (5-8 par script).",
   "hook_text": "Texte court affiche 3 premieres secondes (5-8 mots max)",
-  "image_prompts": ["prompt 1 en anglais", "prompt 2", "... (15-20 prompts)"],
+  "image_prompts": ["prompt 1 en anglais", "prompt 2", "... (exactement 10 prompts ultra-detailles)"],
   "categorie": "stoicisme | philosophie | business | spiritualite | psychologie",
   "tags": ["mot1", "mot2", "mot3", "mot4", "mot5", "mot6", "mot7", "mot8"],
   "cta_text": "Phrase d'appel a l'action finale",
   "mood": "dark_motivation | contemplative | warrior | rebirth | resilience"
 }
 
-# REGLES IMAGE PROMPTS (15-20, en anglais)
-IMPORTANT : Les images sont affichees DANS L'ORDRE pendant la narration. Chaque image correspond a un bloc de ~30 mots du script. Les images DOIVENT illustrer ce qui est dit a ce moment precis.
+# REGLES IMAGE PROMPTS (exactement 10, en anglais)
+IMPORTANT : Exactement 10 images, pas plus, pas moins. Chaque image reste affichee plus longtemps, donc elle DOIT etre d'une qualite exceptionnelle et parfaitement illustrer le moment narratif correspondant.
 
-Chaque prompt doit evoquer un visuel cinematique. Style a ajouter dans chaque prompt :
-"dark moody cinematic lighting, dramatic shadows, teal and orange color grading, 4k ultrarealistic photography, no text no words no writing"
+Chaque prompt doit etre ULTRA-DETAILLE (40-80 mots minimum par prompt). Decris precisement :
+- Le SUJET principal (personnage, objet, scene)
+- La COMPOSITION (angle de camera, plan large/serre, profondeur de champ)
+- L'ECLAIRAGE precis (direction, couleur, intensite, ombres)
+- L'AMBIANCE et les DETAILS d'environnement (textures, materiaux, meteo, particules)
+- Le STYLE visuel (reference cinematographique, photographe, epoque)
+
+Style de base a integrer dans chaque prompt :
+"dark moody cinematic lighting, dramatic shadows, teal and orange color grading, 4k ultrarealistic photography, shot on ARRI Alexa, anamorphic lens flare, shallow depth of field, no text no words no writing no watermark"
 
 Correspondance obligatoire narration/images :
-- Image 1 : illustre le CROCHET (scene d'ouverture, mystere)
-- Images 2-3 : illustre la PROMESSE (tension, attente)
-- Images 4-7 : illustre l'HISTOIRE (epoque, personnage, contexte historique)
-- Images 8-12 : illustre le MESSAGE CENTRAL (metaphores, symboles de la citation)
-- Images 13-16 : illustre l'APPROFONDISSEMENT (vie moderne, applications concretes)
-- Images 17-19 : illustre le CLIMAX (intensite maximale, revelation, emotion)
-- Image 20 : illustre la CONCLUSION (lumiere, espoir, horizon)
+- Image 1 : CROCHET — scene d'ouverture iconique, visuel mystere qui capte l'attention
+- Image 2 : PROMESSE — tension, attente, anticipation du message a venir
+- Image 3-4 : HISTOIRE — reconstitution de l'epoque, du personnage, du contexte historique avec details d'epoque
+- Image 5-6 : MESSAGE CENTRAL — metaphores visuelles puissantes de la citation, symboles forts
+- Image 7-8 : APPROFONDISSEMENT — connexion vie moderne, scenes actuelles qui resonnent
+- Image 9 : CLIMAX — intensite maximale, image la plus emotionnelle et puissante
+- Image 10 : CONCLUSION — lumiere, espoir, ouverture, horizon
 
-Categories de visuels a varier :
-- Statues antiques (grecques, romaines) avec lumiere dramatique
-- Paysages dramatiques (montagnes brume, ocean dechaine, foret sombre)
-- Silhouettes humaines (homme seul falaise, couloir sombre)
-- Scenes urbaines nocturnes (skyline, neon, pluie beton)
-- Gros plans symboliques (poing serre, oeil gros plan, flamme)
-- Art abstrait / AI art (geometrie sacree, fractales, energie)
+Exemples de prompts HAUTE QUALITE (a ce niveau de detail) :
+- "Extreme close-up of a weathered marble statue of Marcus Aurelius, rain droplets streaming down the carved face, one eye illuminated by a single shaft of golden light piercing through storm clouds, the other half in deep shadow, ancient Roman forum ruins blurred in background, volumetric fog, shot on ARRI Alexa with Cooke anamorphic lens, teal and orange color grading, 4k ultrarealistic"
+- "A lone man standing at the edge of a volcanic cliff at golden hour, seen from behind in silhouette, his coat billowing in the wind, vast ocean of clouds below him glowing amber and crimson, distant lightning on the horizon, god rays breaking through towering cumulonimbus clouds, epic scale, cinematic wide shot, drone perspective"
 
 # REGLE ABSOLUE SUR LES ACCENTS
 Tu DOIS OBLIGATOIREMENT utiliser TOUS les accents francais : e, e, e, a, a, o, u, u, i, i, c, e.
@@ -117,7 +120,7 @@ Note : dans les AUTRES champs JSON, tu peux ecrire les mots normalement.
 # AUTEURS VARIES
 Stoiciens, entrepreneurs, philosophes, leaders spirituels, ecrivains, scientifiques, guerriers...
 
-VERIFIE : script_complet fait-il 400-700 mots ? TOUS les accents ? AUCUN chiffre arabe ? Mots anglais en phonetique ? 15-20 image_prompts ?"""
+VERIFIE : script_complet fait-il 400-700 mots ? TOUS les accents ? AUCUN chiffre arabe ? Mots anglais en phonetique ? Exactement 10 image_prompts ultra-detailles ?"""
 
 
 def build_exclusion_text(history: list[dict]) -> str:
@@ -176,7 +179,7 @@ def generate_content(exclusion_text: str = "") -> dict:
 
 INSTRUCTIONS :
 1. script_complet entre 400 et 700 mots
-2. 15-20 image_prompts cinematiques en anglais
+2. Exactement 10 image_prompts ULTRA-DETAILLES (40-80 mots chacun) en anglais
 3. Structure en 7 parties (hook, promesse, histoire, message, approfondissement, climax, conclusion)
 4. Hook qui arrete le scroll
 5. JAMAIS la meme citation que celles listees ci-dessus
@@ -185,6 +188,7 @@ INSTRUCTIONS :
 8. TOUS les nombres en LETTRES
 9. Mots anglais en phonetique francaise dans script_complet
 10. mood = l'ambiance globale de la video
+11. Chaque image_prompt doit decrire composition, eclairage, ambiance, sujet, style en detail
 
 Retourne UNIQUEMENT le JSON, sans backticks, sans texte avant ou apres."""
 

@@ -1,14 +1,9 @@
-"""Generation de contenu YouTube via Kie.ai (DeepSeek) — 3 appels separes.
-
-V2: Base de philosophes verifiee + tendances web + rotation ponderee.
-"""
+"""Generation de contenu YouTube via Kie.ai (DeepSeek) — 3 appels separes."""
 import json
 import re
 import logging
 import httpx
 from . import config
-from .philosophers import pick_philosopher, pick_citation, get_philosopher_count, get_citation_count
-from .trends import fetch_trending_topics, match_trend_to_philosopher, build_trend_context
 
 logger = logging.getLogger("youtube-citations")
 
@@ -95,40 +90,9 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
 # ETAPE 1 : Script en texte brut (pas JSON)
 # ============================================================
 
-def _generate_script_text(exclusion_text: str) -> tuple[str, str, str, str]:
-    """Genere le script narration en texte brut.
-
-    Utilise la base de philosophes verifiee + tendances web.
-    Retourne (script, citation, auteur, epoque).
-    """
-    # -- Extraire les noms des philosophes deja utilises --
-    exclusion_names = []
-    for line in exclusion_text.split("\n"):
-        if line.strip().startswith("- ") and "—" in line:
-            author = line.split("—")[-1].strip()
-            if author:
-                exclusion_names.append(author)
-
-    # -- Selectionner philosophe et citation depuis la base verifiee --
-    philosopher = pick_philosopher(exclusion_names=exclusion_names)
-    citation_text, citation_source = pick_citation(philosopher)
-
-    logger.info(
-        f"Selected: {philosopher['nom']} ({philosopher['courant']}) — "
-        f"\"{citation_text[:50]}...\" [{citation_source}]"
-    )
-
-    # -- Chercher les tendances web --
-    try:
-        trends = fetch_trending_topics()
-        trend = match_trend_to_philosopher(trends, philosopher["nom"], philosopher["courant"])
-    except Exception as e:
-        logger.warning(f"Trends fetch failed: {e}")
-        trend = None
-
-    trend_context = build_trend_context(trend)
-
-    system = f"""Tu es un createur YouTube francais expert en storytelling philosophique.
+def _generate_script_text(exclusion_text: str) -> tuple[str, str, str]:
+    """Genere le script narration en texte brut. Retourne (script, citation_line, auteur_line)."""
+    system = """Tu es un createur YouTube francais expert en storytelling philosophique.
 Tu fais des videos profondes qui appliquent la sagesse ancienne aux problemes modernes.
 Ton style : grave, direct, tutoiement, zero remplissage. Chaque phrase doit frapper.
 
@@ -150,27 +114,16 @@ STYLE NARRATIF :
 - Applique la sagesse ancienne a des problemes d'aujourd'hui (anxiete, reseaux sociaux, burnout, relations)
 
 Ecris le script DIRECTEMENT en texte brut, PAS de JSON.
-Commence par une ligne CITATION: puis AUTEUR: puis le script.
-
-PHILOSOPHE DU JOUR : {philosopher['nom']}
-COURANT : {philosopher['courant']}
-EPOQUE : {philosopher['epoque']}"""
+Commence par une ligne CITATION: puis AUTEUR: puis le script."""
 
     user_prompt = f"""Ecris le script YouTube du jour.
 
-CITATION IMPOSEE (VERIFIEE, source : {citation_source}) :
-"{citation_text}"
-
-AUTEUR : {philosopher['nom']}
-EPOQUE : {philosopher['epoque']}
-
 {exclusion_text}
-{trend_context}
 
 FORMAT DE REPONSE (texte brut, PAS de JSON) :
-CITATION: {citation_text}
-AUTEUR: {philosopher['nom']}
-EPOQUE: {philosopher['epoque']}
+CITATION: [la citation complete]
+AUTEUR: [nom de l'auteur]
+EPOQUE: [contexte historique court]
 ---
 [Le script complet de 1500-2500 mots, ecrit comme un recit continu]
 
@@ -180,7 +133,7 @@ STRUCTURE NARRATIVE (enchaine naturellement, SANS ecrire les titres) :
 
 - CONTEXTE + PROMESSE : Pose les enjeux. Dis au spectateur ce qu'il va comprendre et pourquoi ca change tout. "A la fin de cette video, tu sauras exactement comment..."
 
-- L'HISTOIRE DU PENSEUR : Raconte la vie de {philosopher['nom']} comme une HISTOIRE, pas une biographie Wikipedia. Quels combats ? Quelles souffrances ? Pourquoi cette citation est nee de son vecu ?
+- L'HISTOIRE DU PENSEUR : Raconte la vie du philosophe comme une HISTOIRE, pas une biographie Wikipedia. Quels combats ? Quelles souffrances ? Pourquoi cette citation est nee de son vecu ?
 
 - LA CITATION DECRYPTEE : Explique la citation mot par mot. Qu'est-ce qu'elle dit VRAIMENT sous la surface ?
 
@@ -200,22 +153,20 @@ STRUCTURE NARRATIVE (enchaine naturellement, SANS ecrire les titres) :
 
     raw = _call_kie_llm(system, user_prompt)
 
-    # Utiliser les valeurs verifiees de la base (pas celles du LLM)
-    citation = citation_text
-    auteur = philosopher["nom"]
-    epoque = philosopher["epoque"]
+    # Parser le texte brut
+    citation = ""
+    auteur = ""
+    epoque = ""
     script = raw
 
-    # Parser le LLM output pour extraire juste le script
     for line in raw.split("\n"):
         line_stripped = line.strip()
-        # On ignore les lignes metadata du LLM — on a deja les bonnes valeurs
         if line_stripped.upper().startswith("CITATION:"):
-            pass  # On garde notre citation verifiee
+            citation = line_stripped[9:].strip().strip('"')
         elif line_stripped.upper().startswith("AUTEUR:"):
-            pass  # On garde notre auteur verifie
+            auteur = line_stripped[7:].strip()
         elif line_stripped.upper().startswith("EPOQUE:") or line_stripped.upper().startswith("ÉPOQUE:"):
-            pass  # On garde notre epoque verifiee
+            epoque = line_stripped.split(":", 1)[1].strip()
 
     # Extraire le script apres le separateur ---
     if "---" in raw:
@@ -380,17 +331,8 @@ def _fallback_image_prompts(auteur: str) -> list[str]:
 # ============================================================
 
 def generate_content(exclusion_text: str = "") -> dict:
-    """Genere le contenu YouTube en 3 appels LLM separes.
-
-    V2: Utilise la base de philosophes verifiee ({get_philosopher_count()} philosophes,
-    {get_citation_count()} citations) + tendances web.
-    """
-    logger.info(
-        f"Content generation V2: {get_philosopher_count()} philosophes, "
-        f"{get_citation_count()} citations verifiees"
-    )
-
-    # Etape 1: Script en texte brut (philosophe + citation from DB)
+    """Genere le contenu YouTube en 3 appels LLM separes."""
+    # Etape 1: Script en texte brut
     max_retries = 2
     for attempt in range(max_retries + 1):
         try:
