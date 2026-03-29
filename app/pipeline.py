@@ -10,6 +10,7 @@ from . import video as video_mod
 from . import subtitles as subtitles_mod
 from . import music as music_mod
 from . import publish as publish_mod
+from . import supabase_client
 from .utils import clean_filename
 
 logger = logging.getLogger("citations-v3")
@@ -26,31 +27,23 @@ def _calc_image_durations(
     total_words: int,
     total_duration: float,
 ) -> list[float]:
-    """Calcule la duree de chaque image basee sur les word timings TTS.
-
-    Chaque image couvre un bloc de mots proportionnel. Le timestamp de debut/fin
-    de chaque bloc est extrait des timepoints TTS, ce qui synchronise les
-    changements d'image avec la narration.
-    """
+    """Calcule la duree de chaque image basee sur les word timings TTS."""
     if not word_timings or total_words < nb_images:
         return None
 
-    # Construire mapping index -> temps
     time_map = {}
     for tp in word_timings:
         time_map[tp["index"]] = tp["time"]
 
     def _nearest_time(word_idx: int) -> float:
-        """Trouve le timestamp le plus proche pour un index de mot."""
         if word_idx in time_map:
             return time_map[word_idx]
-        # Chercher le plus proche
         best_idx = min(time_map.keys(), key=lambda k: abs(k - word_idx))
         return time_map[best_idx]
 
     words_per_image = total_words / nb_images
     durations = []
-    buffer = 0.3  # petite marge pour que les images couvrent tout l'audio
+    buffer = 0.3
 
     for i in range(nb_images):
         start_word = int(i * words_per_image)
@@ -66,10 +59,9 @@ def _calc_image_durations(
         else:
             end_t = _nearest_time(end_word)
 
-        dur = max(end_t - start_t, 2.0)  # minimum 2s par image
+        dur = max(end_t - start_t, 2.0)
         durations.append(dur)
 
-    # Ajuster pour que la somme couvre bien la duree totale + marge
     target = total_duration + buffer
     current_total = sum(durations)
     if current_total > 0:
@@ -99,13 +91,13 @@ async def run_pipeline():
         # 0. Generer musique ambient si necessaire
         music_mod.ensure_music_exists()
 
-        # 1. Charger historique
-        logger.info("Step 1/7: Loading history...")
-        history = publish_mod.load_sheet_history()
+        # 1. Charger historique depuis Supabase
+        logger.info("Step 1/7: Loading history from Supabase...")
+        history = supabase_client.load_recent_history(days=30, platform="tiktok")
         exclusion_text = content_mod.build_exclusion_text(history)
 
-        # 2. Generer contenu (Claude)
-        logger.info("Step 2/7: Generating content (Claude)...")
+        # 2. Generer contenu (Claude via OpenRouter)
+        logger.info("Step 2/7: Generating content (Claude via OpenRouter)...")
         content_result = content_mod.generate_content(exclusion_text)
         auteur_clean = clean_filename(content_result["auteur"])
         filename = f"citation_{date_str}_{auteur_clean}"
@@ -128,8 +120,8 @@ async def run_pipeline():
             total_duration=audio_result.duration,
         )
 
-        # 5. Assembler video (FFmpeg)
-        logger.info("Step 5/7: Assembling video (FFmpeg)...")
+        # 5. Assembler video (FFmpeg avec Ken Burns)
+        logger.info("Step 5/7: Assembling video (FFmpeg + Ken Burns)...")
         raw_video = video_mod.assemble_video(
             image_paths,
             audio_result.audio_path,
@@ -138,8 +130,8 @@ async def run_pipeline():
             segment_durations=segment_durations,
         )
 
-        # 6. Generer sous-titres + color grading + graver (1 seule passe)
-        logger.info("Step 6/7: Finalizing video (color grade + subtitles)...")
+        # 6. Generer sous-titres + color grading par mood + graver
+        logger.info("Step 6/7: Finalizing video (mood color grade + subtitles)...")
         ass_content = subtitles_mod.generate_ass(
             content_result["script_complet"],
             audio_result.word_timings,
@@ -151,15 +143,15 @@ async def run_pipeline():
         with open(ass_path, "w", encoding="utf-8") as f:
             f.write(ass_content)
 
+        mood = content_result.get("mood", "dark_motivation")
         graded_video = video_mod.finalize_video(
-            raw_video, ass_path, f"{config.VIDEOS_DIR}/graded_{filename}.mp4"
+            raw_video, ass_path, f"{config.VIDEOS_DIR}/graded_{filename}.mp4",
+            mood=mood,
         )
 
         # 7. Mixer musique + publier
         logger.info("Step 7/7: Mixing music & publishing...")
-        music_file = music_mod.select_music(
-            content_result.get("mood"), audio_result.duration
-        )
+        music_file = music_mod.select_music(mood, audio_result.duration)
         final_video = music_mod.mix_music(
             graded_video,
             music_file,
@@ -177,7 +169,7 @@ async def run_pipeline():
         publish_mod.send_telegram_notification(
             content_result, audio_result.duration, final_video
         )
-        publish_mod.log_to_sheets(content_result, audio_result.duration)
+        publish_mod.log_to_history(content_result, audio_result.duration)
         publish_mod.save_local_log(content_result, audio_result.duration, final_video)
 
         # TikTok (try, ne fait pas echouer le pipeline)

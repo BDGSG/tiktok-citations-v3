@@ -1,25 +1,30 @@
-"""Generation de contenu Shorts Sagesse via Kie.ai (DeepSeek)."""
+"""Generation de contenu Shorts Sagesse via Claude (OpenRouter) avec exclusion Supabase."""
 import json
 import re
 import random
 import logging
 import httpx
 from . import config
+from app import supabase_client
 
 logger = logging.getLogger("shorts-sagesse")
 
-KIE_CHAT_URL = "https://api.kie.ai/api/v1/chat/completions"
+# --- OpenRouter (Claude) ---
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_KEY = "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"
+OPENROUTER_MODEL = "anthropic/claude-3.5-haiku"
 
 
-def _call_kie_llm(system: str, user_prompt: str) -> str:
+def _call_claude(system: str, user_prompt: str) -> str:
+    """Appelle Claude via OpenRouter."""
     headers = {
-        "Authorization": f"Bearer {config.KIE_API_KEY}",
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://citations-v3.coolify.inkora.art",
     }
     body = {
-        "model": "deepseek-chat",
+        "model": OPENROUTER_MODEL,
         "max_tokens": 2048,
-        "temperature": 0.9,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_prompt},
@@ -27,15 +32,28 @@ def _call_kie_llm(system: str, user_prompt: str) -> str:
     }
 
     with httpx.Client(timeout=120) as client:
-        resp = client.post(KIE_CHAT_URL, headers=headers, json=body)
+        resp = client.post(OPENROUTER_URL, headers=headers, json=body)
         resp.raise_for_status()
         data = resp.json()
 
     if "choices" not in data:
-        error_msg = data.get("msg", data.get("message", str(data)))
-        raise RuntimeError(f"Kie.ai API error: {error_msg}")
+        error_msg = data.get("error", {}).get("message", str(data))
+        raise RuntimeError(f"OpenRouter API error: {error_msg}")
 
     return data["choices"][0]["message"]["content"]
+
+
+def _build_shorts_exclusion() -> str:
+    """Charge l'historique des shorts depuis Supabase et construit le texte d'exclusion."""
+    history = supabase_client.load_recent_history(days=14, platform="shorts")
+    if not history:
+        return ""
+    lines = ["CONTENUS DEJA GENERES RECEMMENT (ne JAMAIS repeter les memes idees/themes) :"]
+    for row in history:
+        citation = row.get("citation", "")
+        if citation:
+            lines.append(f"- {citation[:100]}")
+    return "\n".join(lines)
 
 
 SYSTEM_PROMPTS = {
@@ -74,33 +92,39 @@ Format: texte brut uniquement.""",
 }
 
 USER_PROMPTS = {
-    "idee": "Partage une idee CONTRARIANTE sur un de ces sujets : pourquoi la discipline bat la motivation, pourquoi la souffrance est un outil, pourquoi le confort detruit, pourquoi la solitude rend fort, pourquoi les reseaux sociaux sont une prison dorée. Surprends-moi avec un angle que personne n'utilise.",
+    "idee": "Partage une idee CONTRARIANTE sur un de ces sujets : pourquoi la discipline bat la motivation, pourquoi la souffrance est un outil, pourquoi le confort detruit, pourquoi la solitude rend fort, pourquoi les reseaux sociaux sont une prison doree. Surprends-moi avec un angle que personne n'utilise.",
     "situation": "Choisis UNE situation parmi : tu scrolles a trois heures du matin, tu restes dans une relation par peur de la solitude, tu repousses le projet qui te tient a coeur, tu dis oui a tout le monde sauf a toi, tu te compares aux autres sur les reseaux, tu te leves sans savoir pourquoi. Sois VISCERAL dans la description.",
     "conseil": "Donne un conseil que Marc Aurele, Seneque ou Epictete auraient donne a quelqu'un qui souffre de : anxiete de performance, burnout, syndrome de l'imposteur, peur du jugement, ou paralysie du choix. Formule-le avec tes propres mots, comme si tu parlais a un ami.",
 }
 
 
 def generate_content() -> dict:
-    """Genere le contenu d'un Short Sagesse."""
+    """Genere le contenu d'un Short Sagesse avec exclusion Supabase."""
     content_type = random.choice(config.CONTENT_TYPES)
     logger.info(f"Shorts: generating '{content_type}' content")
 
-    raw = _call_kie_llm(SYSTEM_PROMPTS[content_type], USER_PROMPTS[content_type])
+    # Build exclusion text from Supabase history
+    exclusion = _build_shorts_exclusion()
+
+    system = SYSTEM_PROMPTS[content_type]
+    user_msg = USER_PROMPTS[content_type]
+    if exclusion:
+        user_msg = f"{exclusion}\n\n{user_msg}"
+
+    raw = _call_claude(system, user_msg)
 
     # Parser selon le type
     if content_type == "situation" and "---" in raw:
         parts = raw.split("---", 1)
         situation = parts[0].strip()
         conseil = parts[1].strip()
-        # Nettoyer prefixes
         situation = re.sub(r"^SITUATION\s*:\s*", "", situation, flags=re.I).strip()
         conseil = re.sub(r"^CONSEIL\s*:\s*", "", conseil, flags=re.I).strip()
         script = f"{situation} [Pause] {conseil}"
         hook_text = situation[:60].split(".")[0] + "..."
     else:
         script = raw.strip()
-        # Supprimer guillemets eventuels
-        script = script.strip('"').strip("«").strip("»").strip()
+        script = script.strip('"').strip("\u00ab").strip("\u00bb").strip()
         hook_text = script[:50].split(".")[0]
 
     # Nettoyer
@@ -113,7 +137,6 @@ def generate_content() -> dict:
     if word_count < 15:
         raise ValueError(f"Script trop court: {word_count} mots")
     if word_count > 150:
-        # Tronquer a la derniere phrase complete
         words = script.split()[:120]
         script = " ".join(words)
         last_punct = max(script.rfind("."), script.rfind("!"), script.rfind("?"))
@@ -130,15 +153,26 @@ def generate_content() -> dict:
         "conseil": ["sagesse", "philosophie", "developpementpersonnel"],
     }
 
-    return {
+    mood = random.choice(["contemplative", "dark_motivation", "resilience"])
+
+    result = {
         "content_type": content_type,
         "script_complet": script,
         "hook_text": hook_text,
         "image_prompts": [image_prompt],
         "tags": ["sagesse", "shorts", "motivation"] + type_tags.get(content_type, []),
-        "mood": random.choice(["contemplative", "dark_motivation", "resilience"]),
+        "mood": mood,
         "takeaway": script[:80],
+        # Fields for Supabase logging
+        "auteur": f"shorts_{content_type}",
+        "citation": script[:200],
+        "categorie": content_type,
     }
+
+    # Save to Supabase
+    supabase_client.save_to_history(result, platform="shorts")
+
+    return result
 
 
 def _generate_image_prompt(script: str, content_type: str) -> str:
@@ -146,14 +180,13 @@ def _generate_image_prompt(script: str, content_type: str) -> str:
     try:
         system = "Generate a single cinematic image prompt in English for a vertical 9:16 video. Dark moody style. Return ONLY the prompt text, no quotes, no JSON."
         user = f"Script: {script[:200]}\nType: {content_type}\nGenerate one cinematic 9:16 image prompt."
-        raw = _call_kie_llm(system, user)
+        raw = _call_claude(system, user)
         prompt = raw.strip().strip('"')
         if len(prompt) > 20:
             return prompt
     except Exception as e:
         logger.warning(f"Image prompt generation failed: {e}")
 
-    # Fallback
     fallbacks = [
         "silhouette of person on mountain top at sunset, dramatic sky, dark moody cinematic, 9:16 vertical",
         "close-up of weathered hands in prayer position, dramatic lighting, cinematic shadows, 9:16 vertical",

@@ -1,12 +1,12 @@
-"""Publication — Telegram, TikTok, Google Sheets, log local."""
+"""Publication — Telegram, TikTok, Supabase history, log local."""
 import json
 import os
-import base64
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 import httpx
 from . import config
+from . import supabase_client
 
 logger = logging.getLogger("citations-v3")
 
@@ -36,7 +36,6 @@ def send_telegram_video(video_path: str, caption: str) -> bool:
     if not config.TELEGRAM_BOT_TOKEN:
         return False
     url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendVideo"
-    # Tronquer le caption si > 1024 chars (limite Telegram)
     if len(caption) > 1024:
         caption = caption[:1020] + "..."
 
@@ -88,7 +87,6 @@ def send_telegram_error(error_msg: str) -> bool:
 # ============================================================
 
 def _read_tiktok_token() -> dict | None:
-    """Lit le token TikTok depuis le fichier."""
     if not os.path.isfile(config.TOKEN_PATH):
         logger.warning(f"TikTok: token file not found: {config.TOKEN_PATH}")
         return None
@@ -97,7 +95,6 @@ def _read_tiktok_token() -> dict | None:
 
 
 def _refresh_tiktok_token(token: dict) -> dict:
-    """Rafraichit le token TikTok si expire."""
     with httpx.Client(timeout=30) as client:
         resp = client.post(
             "https://open.tiktokapis.com/v2/oauth/token/",
@@ -138,12 +135,10 @@ def _refresh_tiktok_token(token: dict) -> dict:
 
 
 def _get_valid_token() -> dict | None:
-    """Retourne un token TikTok valide (rafraichi si necessaire)."""
     token = _read_tiktok_token()
     if not token:
         return None
 
-    # Verifier expiration (5 min de marge)
     expires_at = datetime.fromisoformat(token["expires_at"])
     if not expires_at.tzinfo:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
@@ -161,7 +156,6 @@ def _get_valid_token() -> dict | None:
 
 
 def upload_tiktok(video_path: str, content: dict) -> dict | None:
-    """Upload une video sur TikTok."""
     token = _get_valid_token()
     if not token:
         logger.warning("TikTok: no valid token, skipping upload")
@@ -170,13 +164,11 @@ def upload_tiktok(video_path: str, content: dict) -> dict | None:
     access_token = token["access_token"]
     video_size = os.path.getsize(video_path)
 
-    # Titre TikTok (limite ~150 chars avec hashtags)
     tags_str = " ".join(f"#{t}" for t in content.get("tags", [])[:5])
     title = f"{content.get('hook', '')} {tags_str}"
     if len(title) > 150:
         title = title[:147] + "..."
 
-    # 1. Init post
     with httpx.Client(timeout=30) as client:
         resp = client.post(
             "https://open.tiktokapis.com/v2/post/publish/video/init/",
@@ -208,7 +200,6 @@ def upload_tiktok(video_path: str, content: dict) -> dict | None:
     if not upload_url:
         raise RuntimeError(f"TikTok: no upload_url: {init_data}")
 
-    # 2. Upload video
     with httpx.Client(timeout=300) as client:
         with open(video_path, "rb") as f:
             resp = client.put(
@@ -226,68 +217,22 @@ def upload_tiktok(video_path: str, content: dict) -> dict | None:
 
 
 # ============================================================
-# Google Sheets
+# Supabase History (replaces Google Sheets)
 # ============================================================
 
-def load_sheet_history() -> list[dict]:
-    """Charge l'historique depuis Google Sheets."""
-    if not config.GOOGLE_SERVICE_ACCOUNT_JSON:
-        logger.warning("Google Sheets: no service account, returning empty history")
-        return []
-
-    try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        sa_info = json.loads(base64.b64decode(config.GOOGLE_SERVICE_ACCOUNT_JSON))
-        creds = Credentials.from_service_account_info(
-            sa_info,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"],
-        )
-        gc = gspread.authorize(creds)
-        sheet = gc.open_by_key(config.GOOGLE_SHEETS_ID).sheet1
-        records = sheet.get_all_records()
-        logger.info(f"Sheets: loaded {len(records)} history rows")
-        return records
-    except Exception as e:
-        logger.error(f"Sheets: failed to load history: {e}")
-        return []
+def load_history() -> list[dict]:
+    """Charge l'historique depuis Supabase (remplace Google Sheets)."""
+    return supabase_client.load_recent_history(days=30, platform="tiktok")
 
 
-def log_to_sheets(content: dict, duration: float) -> bool:
-    """Ajoute une ligne dans Google Sheets."""
-    if not config.GOOGLE_SERVICE_ACCOUNT_JSON:
-        logger.warning("Google Sheets: no service account, skipping log")
-        return False
+def log_to_history(content: dict, duration: float) -> bool:
+    """Sauvegarde dans Supabase (remplace Google Sheets)."""
+    return supabase_client.save_to_history(content, platform="tiktok")
 
-    try:
-        import gspread
-        from google.oauth2.service_account import Credentials
 
-        sa_info = json.loads(base64.b64decode(config.GOOGLE_SERVICE_ACCOUNT_JSON))
-        creds = Credentials.from_service_account_info(
-            sa_info,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"],
-        )
-        gc = gspread.authorize(creds)
-        sheet = gc.open_by_key(config.GOOGLE_SHEETS_ID).sheet1
-
-        sheet.append_row([
-            config.get_date_str(),
-            content.get("auteur", ""),
-            content.get("citation", ""),
-            content.get("categorie", ""),
-            content.get("hook", ""),
-            len(content.get("script_complet", "").split()),
-            round(duration, 1),
-            content.get("mood", ""),
-            content.get("epoque", ""),
-        ])
-        logger.info("Sheets: row appended")
-        return True
-    except Exception as e:
-        logger.error(f"Sheets: failed to log: {e}")
-        return False
+# Keep old names for backward compat
+load_sheet_history = load_history
+log_to_sheets = lambda content, duration: log_to_history(content, duration)
 
 
 # ============================================================
@@ -295,7 +240,6 @@ def log_to_sheets(content: dict, duration: float) -> bool:
 # ============================================================
 
 def save_local_log(content: dict, duration: float, video_path: str):
-    """Sauvegarde un log JSON local."""
     log = {
         "date": config.get_date_str(),
         "datetime": config.get_datetime_str(),

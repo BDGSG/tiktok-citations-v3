@@ -9,7 +9,7 @@ from . import config
 logger = logging.getLogger("citations-v3")
 
 KIE_API_BASE = "https://api.kie.ai/api/v1/flux/kontext"
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+HF_API_URL = "https://router.huggingface.co/hf-inference/v1/models/black-forest-labs/FLUX.1-schnell"
 BATCH_SIZE = 5
 POLL_INTERVAL = 5  # secondes
 MAX_TIMEOUT = 180  # secondes par image
