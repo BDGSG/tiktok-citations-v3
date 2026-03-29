@@ -160,7 +160,7 @@ PlayResY: {config.VIDEO_HEIGHT}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,{font},{fs},{nl},&H000000FF,&H00000000,{bg},1,0,0,0,100,100,0,0,3,4,0,2,60,60,{margin_v},1
+Style: Karaoke,{font},{fs},{nl},&H000000FF,&H00000000,{bg},1,0,0,0,100,100,0,0,3,5,0,2,60,60,{margin_v},1
 Style: Hook,{font},{config.SUBTITLE_HOOK_SIZE},&H00FFFF00,&H000000FF,&H00000000,&HB0000000,1,0,0,0,100,100,0,0,3,5,0,5,80,80,750,1
 Style: CTA,{font},{config.SUBTITLE_CTA_SIZE},&H00FFFFFF,&H000000FF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,3,4,0,5,60,60,500,1
 
