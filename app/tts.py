@@ -261,11 +261,12 @@ def _map_timepoints_to_original(
     timepoints: list[dict],
     total_duration: float,
 ) -> list[float]:
-    """Mappe les timepoints TTS (indexes sur corrected_words) vers original_words.
+    """Mappe les timepoints TTS vers original_words avec interpolation lineaire.
 
-    Utilise un mapping proportionnel par position de caractere pour eviter
-    la derive quand les conversions de nombres changent le nombre de mots
-    (ex: '2000' → 'deux mille' = 1 mot → 2 mots).
+    Approche robuste anti-derive :
+    1. Construire une timeline continue a partir des timepoints TTS
+    2. Mapper chaque mot original par sa position proportionnelle
+    3. Interpoler lineairement entre les timepoints connus
     """
     n_orig = len(original_words)
     n_corr = len(corrected_words)
@@ -273,62 +274,48 @@ def _map_timepoints_to_original(
     if not timepoints or not n_orig:
         return [i * total_duration / max(n_orig, 1) for i in range(n_orig)]
 
-    # Construire lookup: corrected_word_index → time
-    corr_time_map = {}
-    for tp in timepoints:
-        corr_time_map[tp["index"]] = tp["time"]
+    # Construire une timeline ordonnee: [(corr_index, time), ...]
+    timeline = sorted([(tp["index"], tp["time"]) for tp in timepoints], key=lambda x: x[0])
 
-    # Construire positions de caracteres cumulees pour chaque liste
-    # pour mapper par position relative dans le texte
-    def _char_positions(words):
-        positions = []
-        pos = 0
-        for w in words:
-            positions.append(pos)
-            pos += len(w) + 1  # +1 pour l'espace
-        return positions, pos
+    # Ajouter les bornes si manquantes
+    if timeline[0][0] != 0:
+        timeline.insert(0, (0, 0.0))
+    if timeline[-1][1] < total_duration * 0.9:
+        timeline.append((n_corr, total_duration))
 
-    orig_positions, orig_total = _char_positions(original_words)
-    corr_positions, corr_total = _char_positions(corrected_words)
+    def _interpolate_time(corr_idx: float) -> float:
+        """Interpole le temps pour un index corrected arbitraire."""
+        if corr_idx <= timeline[0][0]:
+            return timeline[0][1]
+        if corr_idx >= timeline[-1][0]:
+            return timeline[-1][1]
+        # Trouver les deux bornes encadrantes
+        for k in range(len(timeline) - 1):
+            idx1, t1 = timeline[k]
+            idx2, t2 = timeline[k + 1]
+            if idx1 <= corr_idx <= idx2:
+                if idx2 == idx1:
+                    return t1
+                frac = (corr_idx - idx1) / (idx2 - idx1)
+                return t1 + frac * (t2 - t1)
+        return total_duration * corr_idx / max(n_corr, 1)
 
+    # Mapper chaque mot original vers un index corrected proportionnel
     word_start_times = []
     for i in range(n_orig):
-        # Position relative du mot original dans le texte (0.0 → 1.0)
-        rel_pos = orig_positions[i] / max(orig_total, 1)
+        # Position proportionnelle dans le texte original
+        proportion = i / max(n_orig - 1, 1) if n_orig > 1 else 0
+        # Index equivalent dans les mots corriges
+        corr_float_idx = proportion * (n_corr - 1) if n_corr > 1 else 0
+        # Interpoler le temps
+        t = _interpolate_time(corr_float_idx)
+        word_start_times.append(max(0, t))
 
-        # Trouver le corrected_word a la meme position relative
-        target_char_pos = rel_pos * corr_total
-        corr_idx = 0
-        for j in range(n_corr):
-            if corr_positions[j] <= target_char_pos:
-                corr_idx = j
-            else:
-                break
-
-        # Chercher le timepoint le plus proche
-        if corr_idx in corr_time_map:
-            word_start_times.append(corr_time_map[corr_idx])
-        else:
-            # Trouver le timepoint le plus proche dans corr_time_map
-            if corr_time_map:
-                nearest = min(corr_time_map.keys(), key=lambda k: abs(k - corr_idx))
-                # Interpoler entre le nearest et sa distance
-                base_time = corr_time_map[nearest]
-                # Ajuster proportionnellement
-                if nearest != corr_idx and len(corr_time_map) > 1:
-                    sorted_keys = sorted(corr_time_map.keys())
-                    idx_in_sorted = min(range(len(sorted_keys)), key=lambda k: abs(sorted_keys[k] - corr_idx))
-                    if idx_in_sorted + 1 < len(sorted_keys):
-                        k1, k2 = sorted_keys[idx_in_sorted], sorted_keys[idx_in_sorted + 1]
-                        t1, t2 = corr_time_map[k1], corr_time_map[k2]
-                        frac = (corr_idx - k1) / max(k2 - k1, 1)
-                        word_start_times.append(t1 + frac * (t2 - t1))
-                    else:
-                        word_start_times.append(base_time)
-                else:
-                    word_start_times.append(base_time)
-            else:
-                word_start_times.append(i * total_duration / n_orig)
+    # Post-traitement: s'assurer que les temps sont monotoniquement croissants
+    for i in range(1, len(word_start_times)):
+        if word_start_times[i] <= word_start_times[i - 1]:
+            # Ajouter un petit delta pour eviter les doublons
+            word_start_times[i] = word_start_times[i - 1] + 0.05
 
     return word_start_times
 
@@ -367,11 +354,9 @@ def generate_audio(script: str, filename: str) -> AudioResult:
         all_audio.append(chunk_path)
 
         # Ajuster les timepoints avec l'offset
+        words_before = sum(len(ch) for ch in chunks[:i])
         for tp in timepoints:
-            # Recalculer l'index global
-            global_idx = tp["index"]
-            for prev_chunk in chunks[:i]:
-                global_idx += len(prev_chunk)
+            global_idx = tp["index"] + words_before
             all_timepoints.append({"index": global_idx, "time": tp["time"] + time_offset})
 
         # Calculer la duree du chunk
