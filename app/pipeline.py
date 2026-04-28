@@ -4,7 +4,7 @@ import asyncio
 import logging
 from . import config
 from . import content as content_mod
-from . import tts as tts_mod
+from . import tts_router as tts_mod
 from . import images as images_mod
 from . import video as video_mod
 from . import subtitles as subtitles_mod
@@ -102,9 +102,14 @@ async def run_pipeline():
         auteur_clean = clean_filename(content_result["auteur"])
         filename = f"citation_{date_str}_{auteur_clean}"
 
-        # 3. Generer audio (TTS)
-        logger.info("Step 3/7: Generating audio (TTS)...")
-        audio_result = tts_mod.generate_audio(content_result["script_complet"], filename)
+        # 3. Generer audio (TTS — router picks ElevenLabs if available)
+        logger.info("Step 3/7: Generating audio (TTS router)...")
+        voice_id = content_result.get("_voice_id")
+        audio_result = tts_mod.generate_audio(
+            content_result["script_complet"],
+            filename,
+            voice_id=voice_id,
+        )
 
         # 4. Generer images (Kie.ai — parallele)
         logger.info("Step 4/7: Generating images (Kie.ai)...")

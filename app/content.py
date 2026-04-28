@@ -1,16 +1,33 @@
-"""Generation de contenu via Claude (OpenRouter) — prompt 7 parties, 400-700 mots, rotation auteurs + structures."""
+"""Content generation v4 — 3 angles éditoriaux (A, B, D) avec personas distinctes.
+
+Angle A — Stoïcisme féminin (rupture, charge mentale, deuil, corps, féminin sigma)
+Angle B — Sagesse africaine francophone (proverbes wolof/peul/bambara/lingala + penseurs africains)
+Angle D — Philosophes femmes oubliées (Hildegarde, Hypatie, Christine de Pizan, Beauvoir, etc.)
+
+Chaque angle a sa voix éditoriale propre. Le pipeline tourne en rotation pour ne pas
+saturer un angle.
+"""
+from __future__ import annotations
+
 import json
-import re
+import os
 import random
-import logging
+import re
 from pathlib import Path
+from typing import Optional
+
 import httpx
+import logging
+
 from . import config
 from . import supabase_client
 
 logger = logging.getLogger("citations-v3")
 
-# --- Philosopher database ---
+# ─────────────────────────────────────────────────────────────────────────────
+# Database
+# ─────────────────────────────────────────────────────────────────────────────
+
 _PHILOSOPHERS_PATH = Path(__file__).parent / "data" / "philosophers.json"
 _philosophers_cache: list[dict] | None = None
 
@@ -21,357 +38,405 @@ def _load_philosophers() -> list[dict]:
         with open(_PHILOSOPHERS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         _philosophers_cache = data["thinkers"]
-        logger.info(f"Philosophers: loaded {len(_philosophers_cache)} thinkers")
+        logger.info(f"Philosophers v4: loaded {len(_philosophers_cache)} thinkers")
     return _philosophers_cache
 
 
-# --- Narrative structures ---
-NARRATIVE_STRUCTURES = {
-    "classic": {
-        "label": "Classique (7 parties)",
-        "description": """## STRUCTURE NARRATIVE — CLASSIQUE (7 parties)
-1. LE CROCHET (0-3s, 10-20 mots) — Phrase CHOC qui arrete le scroll
-2. LA PROMESSE (3-15s, 30-50 mots) — Ce que le spectateur va gagner
-3. L'HISTOIRE (15s-1min, 80-120 mots) — Contexte historique, personnage, epoque
-4. LE MESSAGE CENTRAL (1-2min, 100-150 mots) — La citation expliquee, decortiquee
-5. L'APPROFONDISSEMENT (2-3min, 100-150 mots) — Applications vie moderne
-6. LE CLIMAX EMOTIONNEL (3-4min, 60-80 mots) — Revelation finale, phrases courtes
-7. CONCLUSION + CTA (4-5min, 40-60 mots) — Boucle avec le hook, question ouverte""",
+# ─────────────────────────────────────────────────────────────────────────────
+# Editorial angles
+# ─────────────────────────────────────────────────────────────────────────────
+
+ANGLES = {
+    "A": {
+        "label": "Stoïcisme féminin",
+        "voice_id": "XB0fDUnXU5powFXDhCwa",  # ElevenLabs - Charlotte (FR female, contemplative)
+        "audience": "Femmes 25-45 ans qui traversent rupture, burnout, charge mentale, deuil. Cherchent une voix grave qui parle vrai sans condescendance.",
+        "tone": "contemplative-précise, ferme sans dureté, jamais infantilisante. Tutoiement direct, vocabulaire concret du quotidien féminin (cycle, fatigue, regard porté sur soi). Phrases courtes pour la frappe, longues pour l'apaisement.",
+        "themes_priority": ["solitude", "rupture", "charge mentale", "deuil", "corps", "récupération", "regard de soi", "cycle"],
+        "hook_patterns": [
+            "À celle qui lit ça à 23h47…",
+            "Tu peux pleurer ET rester debout. C'est exactement ce que disait…",
+            "Un homme antique a écrit pour toi. Sans le savoir.",
+            "Avant Beauvoir, une femme du Moyen Âge a écrit ces mots qu'on a oubliés.",
+            "Marc Aurèle a écrit ça à 3h du matin. Toi tu vas le lire à la même heure.",
+            "Ce que les hommes appellent force, elles l'appellent endurance.",
+        ],
+        "image_style_seed": "soft natural lighting, warm cinematic film grain, nature textures (water, autumn leaves, stone, candlelight), feminine silhouettes (ancient marble statues of women, hands holding tea, woman walking alone), muted earth tones with golden hour, intimate composition, no faces visible, vertical 9:16",
+        "cta_examples": [
+            "Tu es d'accord ?",
+            "Garde cette phrase pour les jours où tu doutes.",
+            "Partage à celle qui en a besoin ce soir.",
+            "Note-le. Tu y reviendras.",
+        ],
+        "hashtags": ["pourtoi", "stoicisme", "femmesigma", "developpementpersonnel", "lacherprise"],
     },
-    "debate": {
-        "label": "Débat",
-        "description": """## STRUCTURE NARRATIVE — DEBAT
-1. LA QUESTION (0-5s, 15-25 mots) — Pose une question existentielle que tout le monde se pose
-2. ARGUMENTS POUR (5-45s, 80-120 mots) — Developpe le point de vue populaire/accepte
-3. ARGUMENTS CONTRE (45s-1m30, 80-120 mots) — Demonte avec des faits, des exemples
-4. LA CITATION COMME REPONSE (1m30-3min, 100-150 mots) — L'auteur tranche le debat
-5. RESOLUTION (3-4min, 60-80 mots) — Synthese + ce que ca change concretement + CTA""",
+    "B": {
+        "label": "Sagesse africaine francophone",
+        "voice_id": "ErXwobaYiN019PkySvjV",  # ElevenLabs - Antoni (warm masculine, griot tone)
+        "audience": "Diaspora francophone Afrique de l'Ouest, jeunes adultes 18-35, fiers de leurs racines, cherchent une voix qui rend l'oralité sage actuelle.",
+        "tone": "voix de griot moderne, chaleureuse, posée. Mélange français châtié et expressions issues de l'oralité (incipit type 'Au pays où je viens…'). Tutoiement respectueux. Évite les clichés afrocentriques et les caricatures.",
+        "themes_priority": ["communauté", "patience", "transmission orale", "ancêtres", "honneur", "ubuntu", "voyage", "résistance"],
+        "hook_patterns": [
+            "Au pays où je viens, on dit…",
+            "Avant Marc Aurèle, ce sage de Tombouctou écrivait déjà…",
+            "Ce proverbe wolof a deux mille ans. Il vient d'écraser ton ego.",
+            "Quand le baobab tombe, les chèvres pleurent. Mais ce que disent les anciens…",
+            "L'Europe ne te l'apprendra pas. Mais ta grand-mère, peut-être.",
+            "Sankofa. Reviens chercher ce que tu as oublié.",
+        ],
+        "image_style_seed": "warm African golden hour, terracotta and ochre palette, baobab silhouettes, traditional textures (mud cloth bogolan, kente, woven baskets, calabashes), elder hands holding objects, vertical compositions of African landscapes (Sahel, savanna, river deltas), no recognizable faces, ancient Saharan manuscripts, vertical 9:16",
+        "cta_examples": [
+            "Sais-tu qui le disait avant nous ?",
+            "Envoie ça à un cousin, à une sœur. Ils en ont besoin.",
+            "Quel proverbe ta grand-mère t'a transmis ? Réponds en commentaire.",
+            "Note ce mot. Tu le diras un jour à tes enfants.",
+        ],
+        "hashtags": ["pourtoi", "sagesseafricaine", "ubuntu", "afrique", "diaspora", "proverbe"],
     },
-    "what_if": {
-        "label": "Et si...?",
-        "description": """## STRUCTURE NARRATIVE — ET SI...?
-1. LE SCENARIO (0-10s, 20-30 mots) — "Imagine que..." scenario hypothetique puissant
-2. L'EXPLORATION (10s-1min, 100-130 mots) — Developpe le scenario, consequences
-3. LA REVELATION (1-2min, 100-150 mots) — La citation comme verite cachee derriere le scenario
-4. L'IMPACT REEL (2-3min, 80-120 mots) — Comment cette verite s'applique a ta vie MAINTENANT
-5. LE RETOUR (3-4min, 50-70 mots) — Reviens au scenario initial, tout a change + CTA""",
-    },
-    "letter": {
-        "label": "Lettre",
-        "description": """## STRUCTURE NARRATIVE — LETTRE (format epistolaire)
-1. L'ADRESSE (0-5s, 15-20 mots) — "Cher spectateur..." ou "A toi qui..." accroche intime
-2. LE CONSTAT (5-45s, 80-100 mots) — Decris ce que tu observes chez le spectateur (ses doutes, ses peurs)
-3. LA SAGESSE (45s-2min, 100-150 mots) — La citation + son explication, comme un conseil personnel
-4. LA REFLEXION (2-3min, 80-120 mots) — Partage ta propre interpretation, ton vecu
-5. LA SIGNATURE (3-4min, 40-60 mots) — Conclus la lettre avec une derniere pensee + CTA""",
-    },
-    "countdown": {
-        "label": "Countdown",
-        "description": """## STRUCTURE NARRATIVE — COUNTDOWN
-1. L'ANNONCE (0-5s, 15-25 mots) — "Trois verites que..." ou "Cinq raisons pour lesquelles..." accroche numerotee
-2. POINT 1 (5-30s, 60-80 mots) — Premier element, le plus accessible
-3. POINT 2 (30s-1min, 60-80 mots) — Deuxieme element, plus profond
-4. POINT 3 + CITATION (1-2min, 100-150 mots) — Troisieme element = la citation, le plus puissant
-5. SYNTHESE (2-3min, 60-80 mots) — Relie les 3 points, vision globale + CTA""",
+    "D": {
+        "label": "Philosophes femmes oubliées",
+        "voice_id": "EXAVITQu4vr4xnSDxMAC",  # ElevenLabs - Bella (younger female, narrative, scholarly)
+        "audience": "Public 20-40 mixte mais penché féminin, cultivé ou avide de l'être, fatigué des mêmes 5 philosophes hommes cités partout. Veut découvrir.",
+        "tone": "curieux-érudit, presque narratif. Pose toujours le contexte historique de la femme citée (qui elle était, l'époque, ce qu'elle a osé). Ton émerveillé sans être révérencieux, parfois indigné de l'oubli historique.",
+        "themes_priority": ["histoire effacée", "courage intellectuel", "création", "savoir", "résistance", "transmission", "voix retrouvée"],
+        "hook_patterns": [
+            "Personne ne t'a parlé d'elle au lycée. Pourtant…",
+            "Elle a écrit ces mots en 1405. Avant Descartes, avant Kant.",
+            "Hypatie d'Alexandrie a été assassinée pour ses idées. Voici lesquelles.",
+            "Tu connais Nietzsche. Tu n'as jamais entendu parler d'elle. Erreur historique.",
+            "La phrase la plus radicale du XIIe siècle a été écrite par une femme.",
+            "Avant Sartre, elle était. Avant Beauvoir, elle l'avait dit.",
+        ],
+        "image_style_seed": "Renaissance painting aesthetic, oil paint texture, candlelight chiaroscuro, illuminated medieval manuscripts, marble busts of unknown women, cathedral light, ancient libraries, parchment scrolls, telling hands, no recognizable contemporary faces, sepia and gold palette, vertical 9:16",
+        "cta_examples": [
+            "Tu connaissais ?",
+            "Cherche son nom. Lis son livre. Honore-la.",
+            "Dis-moi en commentaire si tu en as déjà entendu parler.",
+            "Garde ce nom. Tu le retrouveras.",
+        ],
+        "hashtags": ["pourtoi", "philosophie", "femmesphilosophes", "histoire", "feminisme", "savoir"],
     },
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Narrative structures (preserved from v3, light tweaks)
+# ─────────────────────────────────────────────────────────────────────────────
+
+NARRATIVE_STRUCTURES = {
+    "classic": "Hook 0-3s → promesse 3-15s → contexte historique 15s-1m → message central 1-2m → application moderne 2-3m → climax 3-4m → conclusion + CTA boucle 4-5m.",
+    "debate": "Question existentielle 0-5s → arguments pour 5-45s → arguments contre 45s-1m30 → la citation tranche 1m30-3m → résolution 3-4m + CTA.",
+    "what_if": "Scénario hypothétique 0-10s → exploration 10s-1m → la citation comme révélation 1-2m → impact concret sur ta vie 2-3m → retour au scénario transformé 3-4m + CTA.",
+    "letter": "Adresse intime 0-5s → constat sur le spectateur 5-45s → la citation comme conseil personnel 45s-2m → ta propre interprétation 2-3m → signature 3-4m + CTA.",
+    "countdown": "Annonce numérotée 0-5s → point 1 5-30s → point 2 30s-1m → point 3 = la citation 1-2m → synthèse 2-3m + CTA.",
+    "encounter": "Rencontre racontée 0-10s → décor de l'époque 10s-45s → la voix de l'auteur 45s-2m → ce qu'elle te disait à toi sans le savoir 2-3m → ce que tu ramènes 3-4m + CTA.",
+}
+
+
 def _pick_narrative_structure() -> str:
-    """Choisit une structure narrative non utilisee recemment."""
     recent = supabase_client.get_recent_structures(days=10, platform="tiktok")
-    all_keys = list(NARRATIVE_STRUCTURES.keys())
-
-    # Filtrer les structures utilisees recemment
-    unused = [k for k in all_keys if k not in recent]
+    keys = list(NARRATIVE_STRUCTURES.keys())
+    unused = [k for k in keys if k not in recent]
     if not unused:
-        # Toutes utilisees — prendre la moins recente
-        counts = {k: recent.count(k) for k in all_keys}
-        unused = [k for k in all_keys if counts.get(k, 0) == min(counts.values())]
-
+        unused = keys
     return random.choice(unused)
 
 
-def _pick_candidate_authors(count: int = 5) -> list[dict]:
-    """Selectionne des auteurs candidats NON utilises recemment."""
+def _pick_angle() -> str:
+    """Rotate through angles A/B/D, biased to under-served lately."""
+    try:
+        recent = supabase_client.get_recent_angles(days=7, platform="tiktok")
+    except Exception:
+        recent = []
+    counts = {"A": 0, "B": 0, "D": 0}
+    for a in recent:
+        if a in counts:
+            counts[a] += 1
+    # Pick min-count angle; tie → random
+    min_count = min(counts.values())
+    candidates = [a for a, c in counts.items() if c == min_count]
+    return random.choice(candidates)
+
+
+def _pick_thinkers_for_angle(angle: str, count: int = 5) -> list[dict]:
     philosophers = _load_philosophers()
-    recent_authors = supabase_client.get_recent_authors(days=10, platform="tiktok")
-    recent_set = set(a.lower() for a in recent_authors)
+    pool = [p for p in philosophers if angle in p.get("angles", [])]
+    if not pool:
+        logger.warning(f"No thinkers for angle {angle}, falling back to all")
+        pool = philosophers
 
-    # Filtrer les philosophes non utilises recemment
-    available = [p for p in philosophers if p["name"].lower() not in recent_set]
+    recent = supabase_client.get_recent_authors(days=14, platform="tiktok")
+    recent_set = {a.lower() for a in recent}
+    unused = [p for p in pool if p["name"].lower() not in recent_set]
+    if len(unused) < count:
+        unused = pool
 
-    if len(available) < count:
-        # Pas assez — prendre tous les disponibles + random des recents
-        available = philosophers.copy()
-
-    # Diversifier les categories
-    by_cat = {}
-    for p in available:
-        by_cat.setdefault(p["category"], []).append(p)
-
-    candidates = []
-    cats = list(by_cat.keys())
-    random.shuffle(cats)
-    for cat in cats:
-        if len(candidates) >= count:
-            break
-        pick = random.choice(by_cat[cat])
-        candidates.append(pick)
-
-    # Completer si necessaire
-    while len(candidates) < count and available:
-        pick = random.choice(available)
-        if pick not in candidates:
-            candidates.append(pick)
-
-    return candidates[:count]
+    random.shuffle(unused)
+    return unused[:count]
 
 
-SYSTEM_PROMPT_TEMPLATE = r"""Tu es un createur TikTok viral francais specialise en motivation, philosophie et developpement personnel. Tu produis des contenus au niveau des meilleurs comptes TikTok motivation (Motiversity, deepstrongquotes, stoicis_mind).
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenRouter / Claude
+# ─────────────────────────────────────────────────────────────────────────────
 
-# MISSION
-Genere un MINI-ESSAI philosophique de 2 a 5 minutes. Le script sera lu a voix haute (vitesse 0.88x, voix masculine grave). Tu DOIS ecrire entre 400 et 700 mots dans le champ script_complet.
-
-# AUTEUR OBLIGATOIRE
-Tu DOIS choisir UN de ces auteurs pour la citation :
-{author_choices}
-NE CHOISIS PAS un autre auteur. C'est OBLIGATOIRE.
-
-# {structure_description}
-
-# PATTERNS DE HOOK (utilise un de ceux-ci) :
-- AFFIRMATION CONTRARIANTE : "Tout ce que tu crois savoir sur le bonheur est faux."
-- QUESTION DIRECTE : "Pourquoi l'homme le plus puissant de Rome ecrivait ceci a trois heures du matin ?"
-- PATTERN 'MOST PEOPLE' : "La plupart des gens ne comprendront jamais cette phrase."
-- CHOC ATTRIBUE : "Un mot. Un seul mot de Seneque a detruit ma peur de l'echec."
-JAMAIS de "Salut", "Hey", "Bienvenue". Frappe DIRECT.
-
-# FORMAT JSON STRICT
-Retourne UNIQUEMENT un objet JSON valide. Pas de markdown, pas de backticks, pas de texte avant ou apres.
-
-{{
-  "hook": "Question choc (8-15 mots)",
-  "citation": "La citation complete",
-  "auteur": "Nom de l'auteur (DOIT etre un des auteurs proposes ci-dessus)",
-  "epoque": "Epoque/contexte (ex: Rome, 65 apr. J-C)",
-  "takeaway": "Lecon percutante en 15-25 mots",
-  "script_complet": "Le script narration complet (400-700 mots). Utilise [Pause] pour marquer les silences strategiques (5-8 par script).",
-  "hook_text": "Texte court affiche 3 premieres secondes (5-8 mots max)",
-  "image_prompts": ["prompt 1 en anglais", "prompt 2", "... (exactement 10 prompts ultra-detailles)"],
-  "categorie": "stoicisme | philosophie | business | spiritualite | psychologie",
-  "tags": ["mot1", "mot2", "mot3", "mot4", "mot5", "mot6", "mot7", "mot8"],
-  "cta_text": "Phrase d'appel a l'action finale",
-  "mood": "dark_motivation | contemplative | warrior | rebirth | resilience"
-}}
-
-# REGLES IMAGE PROMPTS (exactement 10, en anglais)
-IMPORTANT : Exactement 10 images, pas plus, pas moins.
-Chaque prompt doit etre ULTRA-DETAILLE (40-80 mots minimum par prompt). Decris precisement :
-- Le SUJET principal (personnage, objet, scene)
-- La COMPOSITION (angle de camera, plan large/serre, profondeur de champ)
-- L'ECLAIRAGE precis (direction, couleur, intensite, ombres)
-- L'AMBIANCE et les DETAILS d'environnement (textures, materiaux, meteo, particules)
-- Le STYLE visuel (reference cinematographique, photographe, epoque)
-
-Style de base a integrer dans chaque prompt :
-"dark moody cinematic lighting, dramatic shadows, teal and orange color grading, 4k ultrarealistic photography, shot on ARRI Alexa, anamorphic lens flare, shallow depth of field, no text no words no writing no watermark"
-
-Correspondance obligatoire narration/images :
-- Image 1 : CROCHET — scene d'ouverture iconique
-- Image 2 : PROMESSE — tension, anticipation
-- Image 3-4 : HISTOIRE — reconstitution epoque, personnage
-- Image 5-6 : MESSAGE CENTRAL — metaphores visuelles puissantes
-- Image 7-8 : APPROFONDISSEMENT — connexion vie moderne
-- Image 9 : CLIMAX — intensite maximale
-- Image 10 : CONCLUSION — lumiere, espoir
-
-# REGLE ABSOLUE SUR LES ACCENTS
-Tu DOIS OBLIGATOIREMENT utiliser TOUS les accents francais.
-JAMAIS ecrire sans accents.
-
-# REGLE ABSOLUE SUR LES NOMBRES
-Tu DOIS ecrire TOUS les nombres en LETTRES dans le script_complet.
-
-# REGLE SUR LES MOTS ANGLAIS
-Dans script_complet, ecris les mots anglais en phonetique francaise :
-- "mindset" -> "maindsete" | "burnout" -> "beurnaoute"
-
-# STYLE
-- Phrases COURTES pour la tension (5-10 mots)
-- Phrases LONGUES pour la reflexion (15-25 mots)
-- Tutoiement OBLIGATOIRE
-- Ton : mentor dur mais bienveillant
-- [Pause] = silence avant les phrases puissantes (5-8 par script)
-- ZERO remplissage, CHAQUE mot doit compter
-
-VERIFIE : script_complet fait-il 400-700 mots ? TOUS les accents ? AUCUN chiffre arabe ? Mots anglais en phonetique ? Exactement 10 image_prompts ultra-detailles ?"""
-
-
-# --- OpenRouter (Claude) ---
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_KEY = "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"
-OPENROUTER_MODEL = "anthropic/claude-3.5-haiku"
+OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4-6")
 
 
 def _call_claude(system: str, user_prompt: str) -> str:
-    """Appelle Claude via OpenRouter."""
+    if not OPENROUTER_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY missing in env")
     headers = {
         "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://citations-v3.coolify.inkora.art",
+        "X-Title": "citations-v3",
     }
     body = {
         "model": OPENROUTER_MODEL,
         "max_tokens": 8192,
+        "temperature": 0.85,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_prompt},
         ],
     }
-
     logger.info(f"Calling Claude via OpenRouter ({OPENROUTER_MODEL})...")
-    with httpx.Client(timeout=180) as client:
+    with httpx.Client(timeout=240) as client:
         resp = client.post(OPENROUTER_URL, headers=headers, json=body)
         resp.raise_for_status()
         data = resp.json()
-
     if "choices" not in data:
-        error_msg = data.get("error", {}).get("message", str(data))
-        raise RuntimeError(f"OpenRouter API error: {error_msg}")
-
+        raise RuntimeError(f"OpenRouter API error: {data}")
     return data["choices"][0]["message"]["content"]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Prompt template
+# ─────────────────────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT_TEMPLATE = r"""Tu es l'auteur d'un compte TikTok français à très haute qualité éditoriale, spécialisé sur l'angle suivant :
+
+# ANGLE ÉDITORIAL : {angle_label}
+
+**Audience** : {audience}
+
+**Voix** : {tone}
+
+**Thèmes prioritaires** : {themes}
+
+# MISSION
+Génère le SCRIPT NARRATIF complet d'une vidéo TikTok au format 9:16 — 28 secondes ciblées (entre 22 et 34s strictement), lue à voix haute. Le script doit faire **65 à 95 mots** (vitesse lecture 0.92x, voix calme).
+
+ATTENTION : nous visons 70 % de retention à 3 secondes. Le hook 0-3s est CRITIQUE. Si l'audience décroche, l'algo TikTok te tue.
+
+# AUTEUR DE LA CITATION
+Choisis UN auteur dans cette liste (rotation pour éviter la répétition) :
+{author_choices}
+
+Tu DOIS choisir parmi ces noms — leur catégorie/époque conditionne le ton.
+
+# STRUCTURE NARRATIVE
+{structure_description}
+
+# HOOK 0-3s — RÈGLES STRICTES
+Choisis UN pattern parmi ceux-ci, OU crée une variante dans le même esprit :
+{hook_examples}
+
+JAMAIS : "Salut", "Bonjour", "Aujourd'hui on va parler de…", "Bienvenue".
+
+# CITATION
+- La citation doit être réelle ou fortement plausible (esprit de l'auteur). Pour les proverbes africains, mentionne le peuple ("Un proverbe wolof dit…").
+- Traduction française fluide, JAMAIS d'anglais.
+- Maximum 25 mots dans la citation elle-même.
+
+# CTA FINAL
+Dans les 5 derniers mots, finis sur l'un de ces patterns (ou inspire-toi) :
+{cta_examples}
+
+# IMAGE PROMPTS (10 EXACTEMENT)
+Style visuel signature angle {angle_letter} :
+{image_style_seed}
+
+Chaque prompt 40-80 mots EN ANGLAIS, ultra-détaillé : sujet, composition, lumière, ambiance, style. JAMAIS de visages reconnaissables (silhouettes / mains / objets / paysages / sculptures anciennes uniquement). JAMAIS de texte ou mots dans l'image.
+
+# RÈGLES DURES (non négociables)
+- Tous les accents français (é è ê à ï î ô û ç) : OBLIGATOIRES
+- Tous les nombres ÉCRITS EN LETTRES (vingt-trois, pas 23)
+- Mots anglais en phonétique française si présents (mindset → maindsete)
+- 65-95 mots dans script_complet, JAMAIS plus de 95 mots
+- 10 image_prompts EXACTEMENT
+- Tutoiement OBLIGATOIRE
+- Pas d'emoji dans le script (sauf dans hashtags si demandé)
+
+# FORMAT JSON STRICT (sans backticks)
+{{
+  "angle": "{angle_letter}",
+  "hook": "Texte 8-15 mots qui arrête le scroll",
+  "hook_text_overlay": "Texte court 4-7 mots affiché 0-3s en superposition",
+  "citation": "Citation française complète, max 25 mots",
+  "auteur": "Nom exact (depuis la liste)",
+  "epoque": "Date approximative ou siècle/lieu (ex: 'Sénégal, sagesse orale ancestrale')",
+  "takeaway": "Phrase mémorable de 12-20 mots qui résume",
+  "script_complet": "Le script complet 65-95 mots — ce qui sera lu par la voix off",
+  "image_prompts": ["prompt 1 EN ANGLAIS 40-80 mots", "prompt 2", "...exactement 10"],
+  "cta_text": "Texte court à afficher en bas de la dernière scène",
+  "mood": "contemplative | warrior | rebirth | dignified | grief | tender",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6"]
+}}
+
+VÉRIFIE AVANT DE RÉPONDRE :
+- script_complet entre 65 et 95 mots ?
+- 10 image_prompts ?
+- Hook 0-3s qui choque sans crier ?
+- CTA dans les 5 derniers mots ?
+- Tous les accents ?"""
+
+
+def _build_user_prompt(exclusion_text: str) -> str:
+    return f"""Crée le contenu TikTok du jour pour cet angle éditorial.
+
+{exclusion_text}
+
+Respecte STRICTEMENT le format JSON. Pas de backticks, pas de texte avant/après le JSON."""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API
+# ─────────────────────────────────────────────────────────────────────────────
+
 def build_exclusion_text(history: list[dict]) -> str:
-    """Construit le texte d'exclusion a partir de l'historique."""
     if not history:
         return ""
-    lines = ["CITATIONS DEJA UTILISEES (ne JAMAIS les repeter) :"]
-    authors_seen = set()
-    for row in history:
+    lines = ["CITATIONS DEJA UTILISEES (ne JAMAIS les répéter) :"]
+    seen_authors = set()
+    for row in history[-30:]:
         author = row.get("auteur", "")
         citation = row.get("citation", "")
         if citation:
             lines.append(f"- \"{citation}\" — {author}")
         if author:
-            authors_seen.add(author)
-    if authors_seen:
-        lines.append(f"\nAuteurs deja cites recemment : {', '.join(authors_seen)}")
-        lines.append("Privilegie des auteurs DIFFERENTS si possible.")
+            seen_authors.add(author)
+    if seen_authors:
+        lines.append(f"\nAuteurs déjà cités récemment : {', '.join(sorted(seen_authors))}")
+        lines.append("Privilégie un auteur DIFFÉRENT.")
     return "\n".join(lines)
 
 
-def generate_content(exclusion_text: str = "") -> dict:
-    """Genere le contenu avec rotation auteurs et structures narratives."""
-    # Pick narrative structure
-    structure_key = _pick_narrative_structure()
-    structure = NARRATIVE_STRUCTURES[structure_key]
-    logger.info(f"Content: using narrative structure '{structure_key}' ({structure['label']})")
+def generate_content(exclusion_text: str = "", angle: Optional[str] = None) -> dict:
+    """Generate one piece of content for the rotation.
 
-    # Pick candidate authors
-    candidates = _pick_candidate_authors(5)
+    Args:
+        exclusion_text: previously used citations to avoid.
+        angle: optional override ('A'|'B'|'D'). If None, picked by rotation.
+    """
+    angle = angle or _pick_angle()
+    angle_cfg = ANGLES[angle]
+    structure_key = _pick_narrative_structure()
+    structure_desc = NARRATIVE_STRUCTURES[structure_key]
+
+    candidates = _pick_thinkers_for_angle(angle, count=5)
     author_choices = "\n".join(
-        f"- {c['name']} ({c['category']}, {c['era']}) — connu pour : {c['famous_for']}. Themes : {', '.join(c['key_themes'])}"
+        f"- {c['name']} ({c['category']}, {c['era']}) — connu pour : {c['famous_for']}. "
+        f"Thèmes : {', '.join(c['key_themes'])}"
         for c in candidates
     )
-    logger.info(f"Content: candidate authors: {[c['name'] for c in candidates]}")
 
-    # Build system prompt
     system = SYSTEM_PROMPT_TEMPLATE.format(
+        angle_letter=angle,
+        angle_label=angle_cfg["label"],
+        audience=angle_cfg["audience"],
+        tone=angle_cfg["tone"],
+        themes=", ".join(angle_cfg["themes_priority"]),
         author_choices=author_choices,
-        structure_description=structure["description"],
+        structure_description=structure_desc,
+        hook_examples="\n".join(f"  - {h}" for h in angle_cfg["hook_patterns"]),
+        cta_examples="\n".join(f"  - {c}" for c in angle_cfg["cta_examples"]),
+        image_style_seed=angle_cfg["image_style_seed"],
     )
 
-    user_prompt = f"""Cree le contenu TikTok motivationnel/philosophique du jour.
+    user_prompt = _build_user_prompt(exclusion_text)
 
-{exclusion_text}
-
-INSTRUCTIONS :
-1. script_complet entre 400 et 700 mots
-2. Exactement 10 image_prompts ULTRA-DETAILLES (40-80 mots chacun) en anglais
-3. Suis la structure narrative indiquee dans le system prompt
-4. Hook qui arrete le scroll
-5. JAMAIS la meme citation que celles listees ci-dessus
-6. Tags = mots-cles SANS espaces, minuscules, pour hashtags TikTok
-7. TOUS les accents francais OBLIGATOIRES
-8. TOUS les nombres en LETTRES
-9. Mots anglais en phonetique francaise dans script_complet
-10. mood = l'ambiance globale de la video
-11. Chaque image_prompt doit decrire composition, eclairage, ambiance, sujet, style en detail
-12. CHOISIS un des auteurs proposes dans le system prompt
-
-Retourne UNIQUEMENT le JSON, sans backticks, sans texte avant ou apres."""
-
-    # Try up to 2 times to ensure author compliance
-    candidate_names = {c["name"].lower() for c in candidates}
+    from . import hook_gate
+    content: dict | None = None
     for attempt in range(2):
         raw_text = _call_claude(system, user_prompt)
-        content = _parse_json(raw_text)
-        content = _validate(content)
-
-        # Check author is in candidates
-        chosen_author = content.get("auteur", "").lower()
-        if any(chosen_author in name or name in chosen_author for name in candidate_names):
-            logger.info(f"Content: author '{content['auteur']}' matches candidates (attempt {attempt+1})")
+        candidate = _parse_json(raw_text)
+        candidate = _validate(candidate, angle)
+        if hook_gate.passes(candidate.get("hook", "")):
+            content = candidate
             break
+        if attempt == 0:
+            user_prompt += (
+                "\n\nNOTE : ton hook précédent était trop faible (commençait par un cliché ou "
+                "ne tutoyait pas directement). Réécris un hook 0-3s avec 'tu', spécifique, frappant. "
+                "Modèles: 'À celle qui lit ça à 23h47…' / 'Avant Sartre, elle l'avait dit.' / "
+                "'Ce proverbe wolof a deux mille ans.'"
+            )
         else:
-            if attempt == 0:
-                logger.warning(f"Content: author '{content['auteur']}' not in candidates, retrying...")
-            else:
-                logger.warning(f"Content: author '{content['auteur']}' still not in candidates, accepting anyway")
+            content = candidate
+            logger.warning("Hook gate failed twice — proceeding anyway")
+    assert content is not None
 
-    # Save to Supabase
-    supabase_client.save_to_history(content, platform="tiktok", narrative_structure=structure_key)
+    # Inject angle metadata for downstream modules (TTS voice, image style, etc.)
+    content["_angle"] = angle
+    content["_angle_label"] = angle_cfg["label"]
+    content["_voice_id"] = angle_cfg["voice_id"]
+    content["_hashtags_suffix"] = angle_cfg["hashtags"]
 
+    try:
+        supabase_client.save_to_history(
+            content,
+            platform="tiktok",
+            narrative_structure=structure_key,
+            angle=angle,
+        )
+    except Exception as e:
+        logger.warning(f"supabase save failed: {e}")
+
+    word_count = len(content["script_complet"].split())
     logger.info(
-        f"Content generated: {content['auteur']} | "
-        f"{len(content['script_complet'].split())} words | "
-        f"{len(content['image_prompts'])} images | "
-        f"structure={structure_key}"
+        f"Content v4: angle={angle} ({angle_cfg['label']}) | "
+        f"author={content['auteur']} | structure={structure_key} | "
+        f"words={word_count} | images={len(content['image_prompts'])}"
     )
     return content
 
 
 def _parse_json(text: str) -> dict:
-    """Extrait le JSON de la reponse Claude (avec ou sans backticks)."""
     cleaned = re.sub(r"```(?:json)?\s*", "", text)
     cleaned = re.sub(r"```\s*$", "", cleaned)
     cleaned = cleaned.strip()
     return json.loads(cleaned)
 
 
-def _validate(content: dict) -> dict:
-    """Valide et enrichit le contenu genere."""
+def _validate(content: dict, angle: str) -> dict:
     required = ["hook", "citation", "auteur", "script_complet", "image_prompts"]
     for field in required:
         if field not in content:
-            raise ValueError(f"Champ manquant: {field}")
+            raise ValueError(f"Missing field: {field}")
 
     words = content["script_complet"].split()
     word_count = len(words)
-    if word_count < config.SCRIPT_MIN_WORDS:
-        raise ValueError(f"Script trop court: {word_count} mots (min {config.SCRIPT_MIN_WORDS})")
-    if word_count > config.SCRIPT_MAX_WORDS + 50:
-        logger.warning(f"Script un peu long: {word_count} mots (max {config.SCRIPT_MAX_WORDS})")
+    # New range: 60-100 (target 65-95)
+    if word_count < 50:
+        raise ValueError(f"Script too short: {word_count} words (need >=50)")
+    if word_count > 110:
+        logger.warning(f"Script slightly long: {word_count} words (target ≤95)")
 
-    if len(content["image_prompts"]) < config.MIN_IMAGE_PROMPTS:
-        raise ValueError(
-            f"Pas assez d'image prompts: {len(content['image_prompts'])} "
-            f"(min {config.MIN_IMAGE_PROMPTS})"
-        )
+    if len(content["image_prompts"]) < 8:
+        raise ValueError(f"Not enough image prompts: {len(content['image_prompts'])} (need 8+)")
+    if len(content["image_prompts"]) > 12:
+        content["image_prompts"] = content["image_prompts"][:10]
+        logger.warning("Trimmed image_prompts to 10")
 
-    accent_words = ["verite", "echec", "reussite", "lecon", "difference", "strategie"]
-    script = content["script_complet"].lower()
-    missing = [w for w in accent_words if w in script]
-    if len(missing) > 2:
-        logger.warning(f"Accents potentiellement manquants: {missing}")
-
-    content.setdefault("hook_text", "")
-    content.setdefault("cta_text", "Save cette video")
-    content.setdefault("categorie", "philosophie")
+    content.setdefault("hook_text_overlay", content.get("hook", "")[:50])
+    content.setdefault("cta_text", "Note ce nom.")
+    content.setdefault("mood", "contemplative")
     content.setdefault("tags", [])
-    content.setdefault("mood", "dark_motivation")
     content.setdefault("epoque", "")
+    content.setdefault("takeaway", "")
+    content["angle"] = angle
 
     return content

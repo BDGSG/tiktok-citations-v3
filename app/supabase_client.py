@@ -52,7 +52,12 @@ def get_recent_authors(days: int = 10, platform: str | None = None) -> list[str]
     return authors
 
 
-def save_to_history(content: dict, platform: str = "tiktok", narrative_structure: str = "classic") -> bool:
+def save_to_history(
+    content: dict,
+    platform: str = "tiktok",
+    narrative_structure: str = "classic",
+    angle: str | None = None,
+) -> bool:
     """Sauvegarde une generation dans l'historique Supabase."""
     row = {
         "date": config.get_date_str(),
@@ -63,6 +68,7 @@ def save_to_history(content: dict, platform: str = "tiktok", narrative_structure
         "mood": content.get("mood", ""),
         "hook_pattern": content.get("hook", "")[:100] if content.get("hook") else "",
         "narrative_structure": narrative_structure,
+        "angle": angle or content.get("angle") or content.get("_angle") or "X",
     }
     try:
         with httpx.Client(timeout=15) as client:
@@ -83,3 +89,9 @@ def get_recent_structures(days: int = 10, platform: str = "tiktok") -> list[str]
     """Retourne les structures narratives utilisees recemment."""
     rows = load_recent_history(days=days, platform=platform)
     return [r.get("narrative_structure", "classic") for r in rows if r.get("narrative_structure")]
+
+
+def get_recent_angles(days: int = 7, platform: str = "tiktok") -> list[str]:
+    """Retourne les angles editoriaux utilises recemment (A/B/D)."""
+    rows = load_recent_history(days=days, platform=platform)
+    return [r.get("angle") for r in rows if r.get("angle")]

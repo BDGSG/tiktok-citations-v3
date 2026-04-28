@@ -56,6 +56,26 @@ async def lifespan(app: FastAPI):
         id="daily_shorts",
         replace_existing=True,
     )
+    # Job Concurrent monitor — daily 09:00 Paris
+    from . import concurrent_monitor
+    from . import publish as publish_mod
+
+    def _run_monitor():
+        try:
+            report = concurrent_monitor.daily_report()
+            msg = concurrent_monitor.format_telegram_message(report)
+            publish_mod.send_telegram_text(msg)
+        except Exception as e:
+            logger.error(f"concurrent monitor failed: {e}")
+
+    scheduler.add_job(
+        _run_monitor,
+        CronTrigger(hour=9, minute=0),
+        id="daily_concurrent_monitor",
+        replace_existing=True,
+    )
+    logger.info("Concurrent monitor scheduler: daily 09:00 Paris")
+
     logger.info(
         f"Shorts scheduler: daily at {shorts_config.SCHEDULE_HOUR:02d}:{shorts_config.SCHEDULE_MINUTE:02d} {config.TZ}"
     )
